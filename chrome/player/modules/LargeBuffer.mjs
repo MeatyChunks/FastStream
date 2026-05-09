@@ -1,5 +1,5 @@
 export class LargeBuffer {
-  constructor(byteLength, bufferLength, options = {}) {
+  constructor(byteLength, bufferLength) {
     this.byteLength = byteLength;
     this.bufferLength = bufferLength;
     this.currentBuffer = null;
@@ -7,8 +7,6 @@ export class LargeBuffer {
     this.offset = 0;
     this.index = 0;
     this.bufferIndex = 0;
-    this._pool = new Map();
-    this._poolLimit = options.poolLimit || 3;
   }
 
   async initialize(getBufferFn) {
@@ -52,28 +50,8 @@ export class LargeBuffer {
     return parts;
   }
 
-  _acquireBuffer(length) {
-    const bucket = this._pool.get(length);
-    if (bucket && bucket.length > 0) {
-      return bucket.pop();
-    }
-    return new Uint8Array(length);
-  }
-
-  _releaseBuffer(buffer) {
-    const length = buffer.length;
-    let bucket = this._pool.get(length);
-    if (!bucket) {
-      bucket = [];
-      this._pool.set(length, bucket);
-    }
-    if (bucket.length < this._poolLimit) {
-      bucket.push(buffer);
-    }
-  }
-
   async read(length) {
-    const uint8 = this._acquireBuffer(length);
+    const uint8 = new Uint8Array(length);
     const parts = await this.getParts(length);
     let offset = 0;
 
@@ -100,7 +78,6 @@ export class LargeBuffer {
   }
 
   destroy() {
-    this._pool.clear();
     this.currentBuffer = null;
     this.nextPreloadedBuffer = null;
   }

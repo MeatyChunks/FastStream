@@ -149,7 +149,7 @@ export class TabTracker {
   _cleanupStaleTabs() {
     if (typeof chrome === 'undefined' || !chrome.tabs) return;
     chrome.tabs.query({}, (activeTabs) => {
-      if (chrome.runtime.lastError) return;
+      if (chrome.runtime.lastError || !this.tabs) return;
       const activeIds = new Set(activeTabs.map(t => t.id));
       for (const [tabId] of this.tabs) {
         if (!activeIds.has(tabId)) {

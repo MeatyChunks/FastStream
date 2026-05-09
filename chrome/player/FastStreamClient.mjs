@@ -1276,7 +1276,11 @@ export class FastStreamClient extends EventEmitter {
 
     for (const level in this.fragmentsStore) {
       const frags = this.fragmentsStore[level];
-      if (frags) frags.forEach((f) => { if (f) this.freeFragment(f); });
+      if (frags) frags.forEach((f) => {
+        if (f) {
+          try { this.freeFragment(f); } catch (_) {}
+        }
+      });
     }
     this.fragmentsStore = {};
     this.pastSeeks.length = 0;

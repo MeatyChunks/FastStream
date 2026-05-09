@@ -7,9 +7,11 @@ export class SourceBufferWrapper extends EventEmitter {
       throw new Error('Codec not supported: ' + codec);
     }
     this.sourceBuffer = mediaSource.addSourceBuffer(codec);
-    this.sourceBuffer.mode = 'segments';
-    // Firefox defaults SourceBuffer.mode to 'sequence' which requires contiguous
-    // timestamps. Explicitly set 'segments' for codec-agnostic timestamp handling.
+    try {
+      this.sourceBuffer.mode = 'segments';
+      // Firefox defaults SourceBuffer.mode to 'sequence' which requires contiguous
+      // timestamps. Explicitly set 'segments' for codec-agnostic timestamp handling.
+    } catch (_) { /* some browsers reject mode changes after creation */ }
     this.updating = false;
     this.toDo = [];
     this.sourceBuffer.addEventListener('updateend', () => {
@@ -53,20 +55,23 @@ export class SourceBufferWrapper extends EventEmitter {
       if (current.type === 'append') {
         try {
           this.sourceBuffer.appendBuffer(current.buffer);
+          this.updating = true;
           current.resolve();
         } catch (e) {
           if (e.name === 'QuotaExceededError') {
             // Firefox throws QuotaExceededError earlier than Chrome due to stricter
-            // SourceBuffer memory limits. Evict the oldest 30s of buffer to recover.
+            // SourceBuffer memory limits. Evict oldest buffer to recover.
             try {
               const buffered = this.sourceBuffer.buffered;
-              if (buffered.length > 0) {
+              if (buffered.length > 0 && buffered.end(0) > 30) {
                 this.sourceBuffer.remove(0, buffered.end(0) - 30);
-                this.toDo.unshift(current);
               }
             } catch (_) { /* ignore */ }
           }
           current.reject(e);
+          // Synchronous throw: updateend won't fire, skip setting updating
+          this.toDo.splice(0, 1);
+          return;
         }
       } else if (current.type === 'remove') {
         try {

@@ -68,15 +68,14 @@ export class DownloadManager {
 
     // Evict oldest entries if over limit
     if (this.storage.size > this._maxStorageEntries) {
-      const keys = this.storage.keys();
+      const keys = Array.from(this.storage.keys());
       let count = this.storage.size - this._maxStorageEntries;
-      for (const key of keys) {
-        if (count <= 0) break;
-        const entry = this.storage.get(key);
+      for (let i = 0; i < keys.length && count > 0; i++) {
+        const entry = this.storage.get(keys[i]);
         if (entry && typeof entry.destroy === 'function') {
           try { entry.destroy(); } catch (_) {}
         }
-        this.storage.delete(key);
+        this.storage.delete(keys[i]);
         count--;
       }
     }
