@@ -287,6 +287,7 @@ export class FastStreamClient extends EventEmitter {
    */
   destroy() {
     this.destroyed = true;
+    if (this._mainloopTimeout) clearTimeout(this._mainloopTimeout);
     this.resetPlayer();
     this.downloadManager.destroy();
     this.videoAnalyzer.destroy();
@@ -1038,7 +1039,7 @@ export class FastStreamClient extends EventEmitter {
    */
   mainloop() {
     if (this.destroyed) return;
-    setTimeout(this.mainloop.bind(this), 1000);
+    this._mainloopTimeout = setTimeout(this.mainloop.bind(this), 1000);
 
     if (this.needsUserInteraction()) {
       this.interfaceController.setStatusMessage(StatusTypes.REQINTERACTION, Localize.getMessage('player_needs_interaction'), 'warning clickable');
@@ -1246,6 +1247,10 @@ export class FastStreamClient extends EventEmitter {
     const promises = [];
     this.lastTime = 0;
 
+    for (const level in this.fragmentsStore) {
+      const frags = this.fragmentsStore[level];
+      if (frags) frags.forEach((f) => { if (f) this.freeFragment(f); });
+    }
     this.fragmentsStore = {};
     this.pastSeeks.length = 0;
     this.pastUnseeks.length = 0;
@@ -1721,20 +1726,20 @@ export class FastStreamClient extends EventEmitter {
 
     if (videoChanged) {
       if (this.options.freeUnusedChannels && this.fragmentsStore[previousVideoLevelID]) {
-        this.fragmentsStore[previousVideoLevelID].forEach((fragment, i) => {
-          if (i === -1) return;
-          this.freeFragment(fragment);
+        this.fragmentsStore[previousVideoLevelID].forEach((fragment) => {
+          if (fragment) this.freeFragment(fragment);
         });
+        delete this.fragmentsStore[previousVideoLevelID];
       }
       this.levelManager.setCurrentVideoLevelID(videoLevelID);
     }
 
     if (audioChanged) {
       if (this.options.freeUnusedChannels && this.fragmentsStore[previousAudioLevelID]) {
-        this.fragmentsStore[previousAudioLevelID].forEach((fragment, i) => {
-          if (i === -1) return;
-          this.freeFragment(fragment);
+        this.fragmentsStore[previousAudioLevelID].forEach((fragment) => {
+          if (fragment) this.freeFragment(fragment);
         });
+        delete this.fragmentsStore[previousAudioLevelID];
       }
       this.levelManager.setCurrentAudioLevelID(audioLevelID);
     }
