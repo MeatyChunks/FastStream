@@ -8,6 +8,8 @@ export class SourceBufferWrapper extends EventEmitter {
     }
     this.sourceBuffer = mediaSource.addSourceBuffer(codec);
     this.sourceBuffer.mode = 'segments';
+    // Firefox defaults SourceBuffer.mode to 'sequence' which requires contiguous
+    // timestamps. Explicitly set 'segments' for codec-agnostic timestamp handling.
     this.updating = false;
     this.toDo = [];
     this.sourceBuffer.addEventListener('updateend', () => {
@@ -54,6 +56,8 @@ export class SourceBufferWrapper extends EventEmitter {
           current.resolve();
         } catch (e) {
           if (e.name === 'QuotaExceededError') {
+            // Firefox throws QuotaExceededError earlier than Chrome due to stricter
+            // SourceBuffer memory limits. Evict the oldest 30s of buffer to recover.
             try {
               const buffered = this.sourceBuffer.buffered;
               if (buffered.length > 0) {

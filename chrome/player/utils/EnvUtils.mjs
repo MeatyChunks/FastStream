@@ -32,6 +32,7 @@ export class EnvUtils {
    * Checks if the browser is Firefox.
    * @return {boolean} True if Firefox, false otherwise.
    */
+  // Firefox-specific checks are used for MSE, IndexedDB, and audio API differences.
   static isFirefox() {
     return navigator.userAgent.indexOf('Firefox') !== -1;
   }

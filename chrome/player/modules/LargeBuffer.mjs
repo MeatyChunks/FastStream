@@ -1,5 +1,5 @@
 export class LargeBuffer {
-  constructor(byteLength, bufferLength) {
+  constructor(byteLength, bufferLength, options = {}) {
     this.byteLength = byteLength;
     this.bufferLength = bufferLength;
     this.currentBuffer = null;
@@ -8,6 +8,7 @@ export class LargeBuffer {
     this.index = 0;
     this.bufferIndex = 0;
     this._pool = new Map();
+    this._poolLimit = options.poolLimit || 3;
   }
 
   async initialize(getBufferFn) {
@@ -66,7 +67,7 @@ export class LargeBuffer {
       bucket = [];
       this._pool.set(length, bucket);
     }
-    if (bucket.length < 3) {
+    if (bucket.length < this._poolLimit) {
       bucket.push(buffer);
     }
   }

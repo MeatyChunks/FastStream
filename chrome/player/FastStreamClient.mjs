@@ -299,6 +299,33 @@ export class FastStreamClient extends EventEmitter {
   }
 
   /**
+   * Returns a snapshot of key memory-related counters for telemetry.
+   */
+  getMemoryMetrics() {
+    let fragmentCount = 0;
+    let fragmentLevels = 0;
+    for (const level in this.fragmentsStore) {
+      fragmentLevels++;
+      const frags = this.fragmentsStore[level];
+      if (frags) {
+        for (let i = 0; i < frags.length; i++) {
+          if (frags[i]) fragmentCount++;
+        }
+      }
+    }
+
+    return {
+      fragmentCount,
+      fragmentLevels,
+      downloadQueueLength: this.downloadManager?.storage?.size || 0,
+      audioContextActive: !!this.audioContext,
+      syncedAudioPlayers: this.syncedAudioPlayer?.audioPlayers?.length || 0,
+      playerActive: !!this.player,
+      destroyed: this.destroyed,
+    };
+  }
+
+  /**
    * Sets player options and updates UI and filters.
    * @param {Object} options - Player options.
    */
