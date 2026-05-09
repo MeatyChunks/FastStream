@@ -7,6 +7,7 @@ export class SourceBufferWrapper extends EventEmitter {
       throw new Error('Codec not supported: ' + codec);
     }
     this.sourceBuffer = mediaSource.addSourceBuffer(codec);
+    this.sourceBuffer.mode = 'segments';
     this.updating = false;
     this.toDo = [];
     this.sourceBuffer.addEventListener('updateend', () => {
@@ -48,8 +49,21 @@ export class SourceBufferWrapper extends EventEmitter {
       const current = this.toDo[0];
 
       if (current.type === 'append') {
-        this.sourceBuffer.appendBuffer(current.buffer);
-        current.resolve();
+        try {
+          this.sourceBuffer.appendBuffer(current.buffer);
+          current.resolve();
+        } catch (e) {
+          if (e.name === 'QuotaExceededError') {
+            try {
+              const buffered = this.sourceBuffer.buffered;
+              if (buffered.length > 0) {
+                this.sourceBuffer.remove(0, buffered.end(0) - 30);
+                this.toDo.unshift(current);
+              }
+            } catch (_) { /* ignore */ }
+          }
+          current.reject(e);
+        }
       } else if (current.type === 'remove') {
         try {
           this.sourceBuffer.remove(current.start, current.end);

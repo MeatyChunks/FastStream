@@ -7,6 +7,7 @@ export class LargeBuffer {
     this.offset = 0;
     this.index = 0;
     this.bufferIndex = 0;
+    this._pool = new Map();
   }
 
   async initialize(getBufferFn) {
@@ -50,8 +51,28 @@ export class LargeBuffer {
     return parts;
   }
 
+  _acquireBuffer(length) {
+    const bucket = this._pool.get(length);
+    if (bucket && bucket.length > 0) {
+      return bucket.pop();
+    }
+    return new Uint8Array(length);
+  }
+
+  _releaseBuffer(buffer) {
+    const length = buffer.length;
+    let bucket = this._pool.get(length);
+    if (!bucket) {
+      bucket = [];
+      this._pool.set(length, bucket);
+    }
+    if (bucket.length < 3) {
+      bucket.push(buffer);
+    }
+  }
+
   async read(length) {
-    const uint8 = new Uint8Array(length);
+    const uint8 = this._acquireBuffer(length);
     const parts = await this.getParts(length);
     let offset = 0;
 
@@ -75,5 +96,11 @@ export class LargeBuffer {
   async uint32() {
     const arr = await this.read(4);
     return (arr[0] << 24) | (arr[1] << 16) | (arr[2] << 8) | arr[3];
+  }
+
+  destroy() {
+    this._pool.clear();
+    this.currentBuffer = null;
+    this.nextPreloadedBuffer = null;
   }
 }
