@@ -187,13 +187,16 @@ export class DownloadEntry {
     // if it's a blob, convert it to a URL
     if (data instanceof Blob) {
       const url = URL.createObjectURL(data);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = this.url.split('/').pop() || 'download';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      try {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = this.url.split('/').pop() || 'download';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
     } else {
       const a = document.createElement('a');
       a.href = 'data:application/octet-stream;base64,' + btoa(data);

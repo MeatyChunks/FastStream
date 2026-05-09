@@ -76,4 +76,9 @@ export class LargeBuffer {
     const arr = await this.read(4);
     return (arr[0] << 24) | (arr[1] << 16) | (arr[2] << 8) | arr[3];
   }
+
+  destroy() {
+    this.currentBuffer = null;
+    this.nextPreloadedBuffer = null;
+  }
 }

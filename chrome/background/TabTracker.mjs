@@ -123,6 +123,9 @@ export class TabHolder {
 export class TabTracker {
   constructor() {
     this.tabs = new Map();
+    // Periodically clean up stale tabs that weren't caught by onRemoved
+    // (e.g., if the extension was suspended and missed events)
+    this._cleanupInterval = setInterval(() => this._cleanupStaleTabs(), 120000);
   }
 
   createTab(tabId) {
@@ -141,6 +144,26 @@ export class TabTracker {
 
   removeTab(tabId) {
     this.tabs.delete(tabId);
+  }
+
+  _cleanupStaleTabs() {
+    if (typeof chrome === 'undefined' || !chrome.tabs) return;
+    chrome.tabs.query({}, (activeTabs) => {
+      if (chrome.runtime.lastError || !this.tabs) return;
+      const activeIds = new Set(activeTabs.map(t => t.id));
+      for (const [tabId] of this.tabs) {
+        if (!activeIds.has(tabId)) {
+          this.removeTab(tabId);
+        }
+      }
+    });
+  }
+
+  destroy() {
+    if (this._cleanupInterval) {
+      clearInterval(this._cleanupInterval);
+      this._cleanupInterval = null;
+    }
   }
 
   getFrame(tabId, frameId) {
