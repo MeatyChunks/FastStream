@@ -120,7 +120,7 @@ chrome.tabs.onUpdated.addListener((tabid, changeInfo, tabobj) => {
     }, {
       frameId: 0,
     }, () => {
-      BackgroundUtils.checkMessageError('remove_players');
+      BackgroundUtils.checkMessageError('remove_players', true);
     });
 
     const match = AutoEnableList.find((item) => {
