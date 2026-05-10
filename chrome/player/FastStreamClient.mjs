@@ -1387,6 +1387,10 @@ export class FastStreamClient extends EventEmitter {
     this.context.on(DefaultPlayerEvents.CANPLAY, (event) => {
       this.player.playbackRate = this.state.playbackRate;
 
+      if (this.options.loopByDefault) {
+        this.player.getVideo().loop = true;
+      }
+
       if (!this.state.autoPlayTriggered && this.options.autoPlay && this.state.playing === false) {
         this.state.autoPlayTriggered = true;
         this.play();
@@ -1411,6 +1415,11 @@ export class FastStreamClient extends EventEmitter {
 
 
     this.context.on(DefaultPlayerEvents.ENDED, (event) => {
+      if (this.options.loopByDefault) {
+        this.currentTime = 0;
+        this.play();
+        return;
+      }
       this.pause();
       if (this.options.autoplayNext) {
         this.nextVideo();

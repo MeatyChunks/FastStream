@@ -10,6 +10,7 @@ import {RuleManager} from './NetRequestRuleManager.mjs';
 import {SponsorBlockIntegration} from './SponsorBlockIntegration.mjs';
 import {StreamSaverBackend} from './StreamSaverBackend.mjs';
 import {TabTracker} from './TabTracker.mjs';
+import {MetricsLogger} from './MetricsLogger.mjs';
 
 let Options = {};
 const OptionsCache = {};
@@ -185,6 +186,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === MessageTypes.PLAYER_LOADED) {
     if (Logging) console.log('Found FastStream window', frame);
     frame.isPlayer = true;
+    MetricsLogger.log('event', 'player_loaded', {tabId: tab.tabId, frameId: frame.frameId, playerCount: tab.playerCount});
 
     if (tab.downloadInfo) {
       chrome.tabs.sendMessage(frame.tab.tabId, {
@@ -1126,6 +1128,7 @@ async function openPlayer(frame) {
   }
 
   frame.playerOpening = true;
+  const openStart = Date.now();
 
   if (Logging) console.log('Opening player', frame);
 
@@ -1145,6 +1148,7 @@ async function openPlayer(frame) {
         frame.playerOpening = false;
       }
 
+      MetricsLogger.log('perf', 'player_open', {response, duration: Date.now() - openStart, frameId: frame.frameId});
       resolve(response);
     });
   });
@@ -1215,6 +1219,7 @@ async function onSourceRecieved(details, frame, mode) {
   }
 
   addSource(frame, url, mode, customHeaders);
+  MetricsLogger.log('perf', 'source_detected', {mode, frameId: frame.frameId});
 
   const subs = await scrapeCaptionsTags(frame);
   if (subs) {
@@ -1399,3 +1404,10 @@ if (EnvUtils.isChrome()) {
 // chrome.runtime.setUninstallURL('https://docs.google.com/forms/d/e/1FAIpQLSfldLYAi0xAW9tYKMcUsfYYk8KyOQDZlLFjqwwz1LajchpBvA/viewform?usp=sf_link');
 
 Utils.printWelcome(ExtensionVersion);
+
+MetricsLogger.start();
+MetricsLogger.log('event', 'startup', {version: ExtensionVersion});
+
+setInterval(() => {
+  MetricsLogger.log('memory', 'snapshot', {tabs: Tabs.size(), playerCount: Tabs.totalPlayerCount()});
+}, 60000);

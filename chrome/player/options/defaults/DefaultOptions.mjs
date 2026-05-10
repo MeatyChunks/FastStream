@@ -19,6 +19,7 @@ export const DefaultOptions = {
   storeProgress: true,
   autoplayYoutube: EnvUtils.isExtension(),
   autoplayNext: false,
+  loopByDefault: false,
   defaultYoutubeClient: YoutubeClients.WEB,
   defaultQuality: `Auto`,
   colorTheme: ColorThemes.DEFAULT,

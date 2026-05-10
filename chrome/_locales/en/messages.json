@@ -959,6 +959,9 @@
     "options_general_autoplaynext": {
         "message": "Autoplay next video when current video ends"
     },
+    "options_general_loop": {
+        "message": "Loop videos by default"
+    },
     "options_general_quality": {
         "message": "Default video quality"
     },

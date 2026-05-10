@@ -166,6 +166,18 @@ export class TabTracker {
     }
   }
 
+  size() {
+    return this.tabs.size;
+  }
+
+  totalPlayerCount() {
+    let count = 0;
+    for (const tab of this.tabs.values()) {
+      count += tab.playerCount;
+    }
+    return count;
+  }
+
   getFrame(tabId, frameId) {
     const tab = this.getTab(tabId);
     return tab && tab.getFrame(frameId);
