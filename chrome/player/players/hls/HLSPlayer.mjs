@@ -17,6 +17,7 @@ export default class HLSPlayer extends EventEmitter {
     this.client = client;
     this.isPreview = config?.isPreview || false;
     this.isAudioOnly = config?.isAudioOnly || false;
+    this.isAnalyzer = config?.isAnalyzer || false;
     this.defaultQuality = client.options.defaultQuality || 'Auto';
     this.source = null;
     this.activeRequests = [];

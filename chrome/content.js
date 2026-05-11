@@ -507,21 +507,57 @@
     return true;
   }
 
+  function stopOrphanedPlayer(iframe) {
+    try {
+      iframe.src = 'about:blank';
+      iframe.style.setProperty('display', 'none', 'important');
+    } catch (e) {
+      // iframe may be inaccessible
+    }
+  }
+
   function removePlayers() {
     MiniplayerCooldown = Date.now() + 1000;
     iframeMap.forEach((iframeObj) => {
-      unmakeMiniPlayer(iframeObj);
+      try {
+        unmakeMiniPlayer(iframeObj);
+      } catch (e) {
+        // unmakeMiniPlayer may fail if DOM was modified by SPA navigation
+      }
       if (iframeObj.replacedData) {
         const replacedData = iframeObj.replacedData;
-        if (replacedData.softReplace) {
-          showSoft(replacedData.old);
-          replacedData.iframe.parentNode.removeChild(replacedData.iframe);
-        } else {
-          replacedData.iframe.parentNode.replaceChild(replacedData.old, replacedData.iframe);
+        let domRestored = false;
+        try {
+          if (replacedData.softReplace) {
+            showSoft(replacedData.old);
+            if (replacedData.iframe.parentNode) {
+              replacedData.iframe.parentNode.removeChild(replacedData.iframe);
+              domRestored = true;
+            }
+          } else {
+            if (replacedData.iframe.parentNode) {
+              replacedData.iframe.parentNode.replaceChild(replacedData.old, replacedData.iframe);
+              domRestored = true;
+            }
+          }
+        } catch (e) {
+          // DOM may have been modified by SPA navigation
         }
-        removePauseListeners(replacedData.old, replacedData.watcher);
+        if (!domRestored) {
+          stopOrphanedPlayer(replacedData.iframe);
+          showSoft(replacedData.old);
+        }
+        try {
+          removePauseListeners(replacedData.old, replacedData.watcher);
+        } catch (e) {
+          // watcher may already be cleaned up
+        }
 
-        replacedData.resizeObserver.disconnect();
+        try {
+          replacedData.resizeObserver.disconnect();
+        } catch (e) {
+          // resizeObserver may already be disconnected
+        }
 
         iframeObj.replacedData = null;
 
@@ -535,13 +571,28 @@
     undoFillScreenIframe();
 
     replacedPlayerQueue.forEach((replacedData) => {
-      if (replacedData.softReplace) {
-        showSoft(replacedData.old);
-        replacedData.iframe.parentNode.removeChild(replacedData.iframe);
-      } else {
-        replacedData.iframe.parentNode.replaceChild(replacedData.old, replacedData.iframe);
+      let domRestored = false;
+      try {
+        if (replacedData.softReplace) {
+          showSoft(replacedData.old);
+          if (replacedData.iframe.parentNode) {
+            replacedData.iframe.parentNode.removeChild(replacedData.iframe);
+            domRestored = true;
+          }
+        } else {
+          if (replacedData.iframe.parentNode) {
+            replacedData.iframe.parentNode.replaceChild(replacedData.old, replacedData.iframe);
+            domRestored = true;
+          }
+        }
+        removePauseListeners(replacedData.old, replacedData.watcher);
+      } catch (e) {
+        // DOM may have been modified by SPA navigation
       }
-      removePauseListeners(replacedData.old, replacedData.watcher);
+      if (!domRestored) {
+        stopOrphanedPlayer(replacedData.iframe);
+        showSoft(replacedData.old);
+      }
     });
 
     replacedPlayerQueue.length = 0;

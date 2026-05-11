@@ -21,6 +21,7 @@ export default class MP4Player extends EventEmitter {
 
     this.isPreview = config?.isPreview || false;
     this.isAudioOnly = config?.isAudioOnly || false;
+    this.isAnalyzer = config?.isAnalyzer || false;
     this.video = document.createElement(this.isAudioOnly ? 'audio' : 'video');
 
     this.mp4box = MP4Box.createFile(false);

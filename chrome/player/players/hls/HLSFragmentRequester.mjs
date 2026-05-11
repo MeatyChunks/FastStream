@@ -16,6 +16,10 @@ export class HLSFragmentRequester {
     const context = fragment.getContext();
     config = config || {};
 
+    if (this.player.isAnalyzer && priority !== -1) {
+      priority = 5;
+    }
+
     if (fragment.status === DownloadStatus.WAITING) {
       fragment.status = DownloadStatus.DOWNLOAD_INITIATED;
       this.player.emit(DefaultPlayerEvents.FRAGMENT_UPDATE, fragment);

@@ -1,8 +1,10 @@
+import {MetricsLogger} from './MetricsLogger.mjs';
 const PlayerURL = chrome.runtime.getURL('player/index.html');
 export class BackgroundUtils {
   static checkMessageError(message, suppress = false) {
     if (chrome.runtime.lastError) {
       if (!suppress) console.warn(`Unable to send message '${message}'`, chrome.runtime.lastError);
+      MetricsLogger.log('error', 'message_failed', {message, error: chrome.runtime.lastError.message});
     }
   }
 
