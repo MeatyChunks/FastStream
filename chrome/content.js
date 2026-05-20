@@ -315,7 +315,9 @@
             });
           }
         });
-        pobj.resizeObserver.observe(iframe.parentNode);
+        if (iframe.parentNode) {
+          pobj.resizeObserver.observe(iframe.parentNode);
+        }
       }
       if (!Activated) {
         Activated = true;
@@ -571,7 +573,8 @@
         frameId: iframeObj.frameId,
       });
 
-      // Null out DOM references to allow GC
+      // Null out DOM references to allow GC — iframeMap entries are deleted below,
+      // so no code path should access these after this point
       if (iframeObj.miniplayerState) {
         iframeObj.miniplayerState.element = null;
         iframeObj.miniplayerState.placeholder = null;

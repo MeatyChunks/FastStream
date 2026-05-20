@@ -8,6 +8,7 @@ class MetricsLogger {
     this._cachedStored = null; // loaded lazily on first flush
     this._flushing = false;
     this._started = false;
+    this._writeFailCount = 0;
   }
 
   static log(category, event, data = {}) {
@@ -68,7 +69,12 @@ class MetricsLogger {
         this._cachedStored = this._cachedStored.slice(-MAX_ENTRIES);
       }
       await this._writeStorage(this._cachedStored);
+      this._writeFailCount = 0;
     } catch (e) {
+      this._writeFailCount++;
+      if (this._writeFailCount <= 3) {
+        console.warn('MetricsLogger write failed:', e);
+      }
       this._buffer.unshift(...batch);
     }
     this._flushing = false;

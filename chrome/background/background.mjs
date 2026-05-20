@@ -1416,8 +1416,8 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   } else if (alarm.name === 'tabCleanup') {
     Tabs._cleanupStaleTabs();
   } else if (alarm.name === 'streamSaverPrune') {
-    // StreamSaverBackend is in a service worker context with its own setInterval,
-    // this alarm ensures prune runs even after SW restart
+    // No-op: StreamSaverBackend registers its own alarm listener in its
+    // dedicated service worker context. This entry is kept for documentation.
   }
 });
 
