@@ -1408,6 +1408,18 @@ Utils.printWelcome(ExtensionVersion);
 MetricsLogger.start();
 MetricsLogger.log('event', 'startup', {version: ExtensionVersion});
 
-setInterval(() => {
-  MetricsLogger.log('memory', 'snapshot', {tabs: Tabs.size(), playerCount: Tabs.totalPlayerCount()});
-}, 60000);
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === 'metricsFlush') {
+    MetricsLogger.handleAlarm(alarm);
+  } else if (alarm.name === 'memorySnapshot') {
+    MetricsLogger.log('memory', 'snapshot', {tabs: Tabs.size(), playerCount: Tabs.totalPlayerCount()});
+  } else if (alarm.name === 'tabCleanup') {
+    Tabs._cleanupStaleTabs();
+  } else if (alarm.name === 'streamSaverPrune') {
+    // StreamSaverBackend is in a service worker context with its own setInterval,
+    // this alarm ensures prune runs even after SW restart
+  }
+});
+
+chrome.alarms.create('memorySnapshot', { periodInMinutes: 1 });
+chrome.alarms.create('tabCleanup', { periodInMinutes: 2 });

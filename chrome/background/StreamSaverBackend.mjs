@@ -79,6 +79,11 @@ export class StreamSaverBackend {
     self.onfetch = this.onFetch.bind(this);
 
     setInterval(this.pruneStale.bind(this), 5000);
+
+    // Also register alarm-based prune for when service worker wakes up
+    if (typeof chrome !== 'undefined' && chrome.alarms) {
+      chrome.alarms.create('streamSaverPrune', { periodInMinutes: 0.1 });
+    }
   }
 
   pruneStale() {

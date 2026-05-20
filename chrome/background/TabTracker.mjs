@@ -123,9 +123,7 @@ export class TabHolder {
 export class TabTracker {
   constructor() {
     this.tabs = new Map();
-    // Periodically clean up stale tabs that weren't caught by onRemoved
-    // (e.g., if the extension was suspended and missed events)
-    this._cleanupInterval = setInterval(() => this._cleanupStaleTabs(), 120000);
+    // Cleanup is now driven by chrome.alarms in background.mjs
   }
 
   createTab(tabId) {
@@ -160,10 +158,7 @@ export class TabTracker {
   }
 
   destroy() {
-    if (this._cleanupInterval) {
-      clearInterval(this._cleanupInterval);
-      this._cleanupInterval = null;
-    }
+    this.tabs.clear();
   }
 
   size() {

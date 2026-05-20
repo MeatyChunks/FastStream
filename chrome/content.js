@@ -28,7 +28,6 @@
   let MiniplayerCooldown = 0;
   let Activated = false;
 
-  let resizeDebounce = Date.now();
   const Config = {
     softReplaceByDefault: true,
     hasCustomPlaylist: false,
@@ -305,12 +304,15 @@
           }
         }
 
-        // Add resize listener
+        // Add resize listener (rAF-batched)
+        pobj._rafPending = false;
         pobj.resizeObserver = new ResizeObserver(() => {
-          const now = Date.now();
-          if (now - resizeDebounce > 100) {
-            resizeDebounce = now;
-            updateReplacedPlayers();
+          if (!pobj._rafPending) {
+            pobj._rafPending = true;
+            requestAnimationFrame(() => {
+              pobj._rafPending = false;
+              updateReplacedPlayers();
+            });
           }
         });
         pobj.resizeObserver.observe(iframe.parentNode);
@@ -518,6 +520,7 @@
 
   function removePlayers() {
     MiniplayerCooldown = Date.now() + 1000;
+    const frameIdsToRemove = [];
     iframeMap.forEach((iframeObj) => {
       try {
         unmakeMiniPlayer(iframeObj);
@@ -560,13 +563,24 @@
         }
 
         iframeObj.replacedData = null;
-
-        chrome.runtime.sendMessage({
-          type: MessageTypes.FRAME_REMOVED,
-          frameId: iframeObj.frameId,
-        });
       }
+
+      frameIdsToRemove.push(iframeObj.frameId);
+      chrome.runtime.sendMessage({
+        type: MessageTypes.FRAME_REMOVED,
+        frameId: iframeObj.frameId,
+      });
+
+      // Null out DOM references to allow GC
+      if (iframeObj.miniplayerState) {
+        iframeObj.miniplayerState.element = null;
+        iframeObj.miniplayerState.placeholder = null;
+      }
+      iframeObj.iframe = null;
     });
+
+    // Remove all entries from iframeMap
+    frameIdsToRemove.forEach((frameId) => iframeMap.delete(frameId));
 
     undoFillScreenIframe();
 
@@ -626,6 +640,7 @@
   }
 
   function resizeMiniPlayers() {
+    if (document.hidden) return;
     iframeMap.forEach((iframeObj) => {
       updateMiniPlayer(iframeObj);
     });
@@ -1412,7 +1427,7 @@
     if (isLinkToDifferentPageOnWebsite(url)) {
       removePlayers();
     }
-  }, true);
+  }, {capture: true, passive: true});
 
 
   document.addEventListener('fullscreenchange', () => {
@@ -1438,7 +1453,7 @@
   window.addEventListener('resize', () => {
     updateReplacedPlayers();
     resizeMiniPlayers();
-  });
+  }, {passive: true});
 
   window.addEventListener('beforeunload', () => {
     chrome.runtime.sendMessage({

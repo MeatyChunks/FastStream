@@ -140,6 +140,13 @@ export class PlaybackRateChanger extends EventEmitter {
       return;
     }
     const playbackRate = this.client.playbackRate;
+
+    // Throttle when tab is hidden — no point adjusting playback rate
+    if (document.hidden) {
+      setTimeout(this.silenceSkipperLoopHandle, 1000);
+      return;
+    }
+
     setTimeout(this.silenceSkipperLoopHandle, 100 / playbackRate);
 
     if (!this.client.player) return;
