@@ -180,6 +180,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return;
   }
 
+  if (!sender.tab) return;
+
   const tab = Tabs.getTabOrCreate(sender.tab.id);
   const frame = tab.getFrameOrCreate(sender.frameId);
 
