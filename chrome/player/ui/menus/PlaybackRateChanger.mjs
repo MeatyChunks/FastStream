@@ -189,9 +189,7 @@ export class PlaybackRateChanger extends EventEmitter {
         return false;
       }
     }
-    // Don't skip silence if we have insufficient audio data (< 25% coverage)
-    if (!hasData || (totalRange > 4 && dataCount < totalRange * 0.25)) return false;
-    return hasData;
+    return hasData; // Don't skip silence if we have no audio data yet
   }
 
   enableSilenceSkipper() {
@@ -279,6 +277,8 @@ export class PlaybackRateChanger extends EventEmitter {
       this.disableSilenceSkipper();
     }
     this.silenceSkipperLoopRunning = false;
+    this.regularSpeed = 1;
+    this.silenceSkipSpeed = this.maxPlaybackRate;
   }
   
   isOpen() {
