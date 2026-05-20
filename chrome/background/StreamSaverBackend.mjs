@@ -79,6 +79,14 @@ export class StreamSaverBackend {
     self.onfetch = this.onFetch.bind(this);
 
     setInterval(this.pruneStale.bind(this), 5000);
+
+    // Alarm-based prune backup: StreamSaverBackend runs in a dedicated service
+    // worker with its own setInterval, but if the SW is killed and restarted by
+    // the browser, this alarm ensures pruneStale runs on the next wake-up.
+    // The alarm handler in background.mjs delegates to this.pruneStale().
+    if (typeof chrome !== 'undefined' && chrome.alarms) {
+      chrome.alarms.create('streamSaverPrune', { periodInMinutes: 0.1 });
+    }
   }
 
   pruneStale() {

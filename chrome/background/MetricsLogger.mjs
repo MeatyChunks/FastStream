@@ -1,12 +1,14 @@
 const STORAGE_KEY = 'metrics_log';
 const MAX_ENTRIES = 500;
-const FLUSH_INTERVAL = 30000;
+const FLUSH_ALARM_NAME = 'metricsFlush';
 
 class MetricsLogger {
   constructor() {
     this._buffer = [];
-    this._timer = null;
+    this._cachedStored = null; // loaded lazily on first flush
     this._flushing = false;
+    this._started = false;
+    this._writeFailCount = 0;
   }
 
   static log(category, event, data = {}) {
@@ -29,6 +31,12 @@ class MetricsLogger {
     return instance._recordMemory();
   }
 
+  static handleAlarm(alarm) {
+    if (alarm.name === FLUSH_ALARM_NAME) {
+      instance._flush().catch(() => {});
+    }
+  }
+
   _push(category, event, data) {
     this._buffer.push({
       ts: Date.now(),
@@ -39,10 +47,15 @@ class MetricsLogger {
   }
 
   _startAutoFlush() {
-    if (this._timer) return;
-    this._timer = setInterval(() => {
-      this._flush().catch(() => {});
-    }, FLUSH_INTERVAL);
+    if (this._started) return;
+    this._started = true;
+    chrome.alarms.create(FLUSH_ALARM_NAME, { periodInMinutes: 0.5 });
+  }
+
+  async _ensureCacheLoaded() {
+    if (this._cachedStored === null) {
+      this._cachedStored = await this._readStorage();
+    }
   }
 
   async _flush() {
@@ -50,14 +63,18 @@ class MetricsLogger {
     this._flushing = true;
     const batch = this._buffer.splice(0, this._buffer.length);
     try {
-      const stored = await this._readStorage();
-      const merged = stored.concat(batch);
-      if (merged.length > MAX_ENTRIES) {
-        merged.splice(0, merged.length - MAX_ENTRIES);
+      await this._ensureCacheLoaded();
+      this._cachedStored = this._cachedStored.concat(batch);
+      if (this._cachedStored.length > MAX_ENTRIES) {
+        this._cachedStored = this._cachedStored.slice(-MAX_ENTRIES);
       }
-      await this._writeStorage(merged);
+      await this._writeStorage(this._cachedStored);
+      this._writeFailCount = 0;
     } catch (e) {
-      // re-buffer failed entries
+      this._writeFailCount++;
+      if (this._writeFailCount <= 3) {
+        console.warn('MetricsLogger write failed:', e);
+      }
       this._buffer.unshift(...batch);
     }
     this._flushing = false;
@@ -65,7 +82,7 @@ class MetricsLogger {
 
   async _getLogs() {
     await this._flush();
-    return this._readStorage();
+    return this._cachedStored || this._readStorage();
   }
 
   _readStorage() {
