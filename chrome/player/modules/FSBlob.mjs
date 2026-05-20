@@ -58,7 +58,9 @@ export class FSBlob {
     const file = await this.indexedDBManager.getFile(identifier);
 
     if (EnvUtils.isFirefox()) {
-      // Delete file to orphan it
+      // Firefox IndexedDB retains blob references differently than Chrome.
+      // Orphan the entry (delete from IDB but keep the JS reference) to avoid
+      // quota accumulation while preserving the blob for playback.
       await this.indexedDBManager.deleteFile(identifier);
     }
 

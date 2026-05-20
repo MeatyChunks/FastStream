@@ -326,6 +326,6 @@ export class SyncedAudioPlayer extends EventEmitter {
   destroy() {
     this.audioPlayers.forEach((player) => player.destroy());
     this.audioPlayers = [];
-    this.audioContext.close();
+    this.audioContext.close().catch(() => {});
   }
 }

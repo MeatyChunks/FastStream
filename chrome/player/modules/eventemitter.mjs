@@ -7,6 +7,7 @@ class EventEmitterContext {
   }
 
   destroy() {
+    this.events.clear();
     this.parent.removeContext(this);
   }
 

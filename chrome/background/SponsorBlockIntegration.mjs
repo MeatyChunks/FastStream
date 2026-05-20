@@ -24,20 +24,22 @@ export class SponsorBlockIntegration {
     }
   }
 
+  // TODO: Integrate with forked SponsorBlock version in future
+  // onPlayerMessage(msg, sendResponse) {
+  //   if (msg.action === 'getSkipSegments') {
+  //     this.getSkipSegments(msg.videoID).then((segments) => {
+  //       sendResponse(segments);
+  //     });
+  //     return true;
+  //   } else if (msg.action === 'segmentSkipped') {
+  //     this.segmentSkipped(msg.UUID).then((segments) => {
+  //       sendResponse(segments);
+  //     });
+  //     return true;
+  //   }
+  // }
   onPlayerMessage(msg, sendResponse) {
-    return; // TODO: Integrate with forked version in future
-
-    if (msg.action === 'getSkipSegments') {
-      this.getSkipSegments(msg.videoID).then((segments) => {
-        sendResponse(segments);
-      });
-      return true;
-    } else if (msg.action === 'segmentSkipped') {
-      this.segmentSkipped(msg.UUID).then((segments) => {
-        sendResponse(segments);
-      });
-      return true;
-    }
+    return false;
   }
 
   getSkipSegments(videoID) {

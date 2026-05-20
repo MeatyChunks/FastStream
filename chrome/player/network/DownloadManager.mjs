@@ -23,6 +23,7 @@ export class DownloadManager {
     this.failed = 0;
 
     this.blobStore = new FSBlob();
+    this._maxStorageEntries = 1000;
   }
 
   getCompletedEntries() {
@@ -64,6 +65,20 @@ export class DownloadManager {
     }
 
     this.storage.set(identifier, entry);
+
+    // Evict oldest entries if over limit
+    if (this.storage.size > this._maxStorageEntries) {
+      const keys = Array.from(this.storage.keys());
+      let count = this.storage.size - this._maxStorageEntries;
+      for (let i = 0; i < keys.length && count > 0; i++) {
+        const entry = this.storage.get(keys[i]);
+        if (entry && typeof entry.destroy === 'function') {
+          try { entry.destroy(); } catch (_) {}
+        }
+        this.storage.delete(keys[i]);
+        count--;
+      }
+    }
   }
 
   canGetFile(details) {
@@ -105,6 +120,12 @@ export class DownloadManager {
       downloader.destroy();
     });
     this.downloaders = null;
+    this.storage.forEach((entry) => {
+      if (entry && typeof entry.destroy === 'function') {
+        try { entry.destroy(); } catch (_) {}
+      }
+    });
+    this.storage.clear();
     this.storage = null;
     this.blobStore.close();
     this.blobStore = null;
