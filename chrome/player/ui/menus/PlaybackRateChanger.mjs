@@ -143,8 +143,25 @@ export class PlaybackRateChanger extends EventEmitter {
 
     // Throttle when tab is hidden — no point adjusting playback rate
     if (document.hidden) {
-      setTimeout(this.silenceSkipperLoopHandle, 1000);
+      if (this.client.audioAnalyzer && this.client.audioAnalyzer.audioContext) {
+        try {
+          const ctx = this.client.audioAnalyzer.audioContext;
+          if (ctx.state === 'running') {
+            ctx.suspend();
+          }
+        } catch (_) {}
+      }
+      setTimeout(this.silenceSkipperLoopHandle, 5000);
       return;
+    } else {
+      if (this.client.audioAnalyzer && this.client.audioAnalyzer.audioContext) {
+        try {
+          const ctx = this.client.audioAnalyzer.audioContext;
+          if (ctx.state === 'suspended') {
+            ctx.resume();
+          }
+        } catch (_) {}
+      }
     }
 
     setTimeout(this.silenceSkipperLoopHandle, 100 / playbackRate);

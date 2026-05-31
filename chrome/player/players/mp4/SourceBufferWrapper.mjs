@@ -1,4 +1,5 @@
 import {EventEmitter} from '../../modules/eventemitter.mjs';
+import {EnvUtils} from '../../utils/EnvUtils.mjs';
 
 export class SourceBufferWrapper extends EventEmitter {
   constructor(mediaSource, codec) {
@@ -54,6 +55,26 @@ export class SourceBufferWrapper extends EventEmitter {
 
       if (current.type === 'append') {
         try {
+          if (EnvUtils.isFirefox()) {
+            try {
+              const buffered = this.sourceBuffer.buffered;
+              // If we have buffered ranges, prune anything more than 15 seconds in the past
+              if (buffered.length > 0) {
+                const firstStart = buffered.start(0);
+                const lastEnd = buffered.end(buffered.length - 1);
+                // Evict if buffer span exceeds 60 seconds
+                if (lastEnd - firstStart > 60) {
+                  const removeEnd = lastEnd - 30;
+                  if (removeEnd > firstStart) {
+                    this.sourceBuffer.remove(firstStart, removeEnd);
+                    this.updating = true;
+                    // Re-queue the append to run after eviction finishes
+                    return;
+                  }
+                }
+              }
+            } catch (_) {}
+          }
           this.sourceBuffer.appendBuffer(current.buffer);
           this.updating = true;
           current.resolve();
