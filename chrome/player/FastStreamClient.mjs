@@ -287,6 +287,7 @@ export class FastStreamClient extends EventEmitter {
    */
   destroy() {
     this.destroyed = true;
+    if (this._mainloopTimeout) clearTimeout(this._mainloopTimeout);
     this.resetPlayer();
     this.downloadManager.destroy();
     this.videoAnalyzer.destroy();
@@ -295,6 +296,33 @@ export class FastStreamClient extends EventEmitter {
       this.progressMemory.destroy();
       this.progressMemory = null;
     }
+  }
+
+  /**
+   * Returns a snapshot of key memory-related counters for telemetry.
+   */
+  getMemoryMetrics() {
+    let fragmentCount = 0;
+    let fragmentLevels = 0;
+    for (const level in this.fragmentsStore) {
+      fragmentLevels++;
+      const frags = this.fragmentsStore[level];
+      if (frags) {
+        for (let i = 0; i < frags.length; i++) {
+          if (frags[i]) fragmentCount++;
+        }
+      }
+    }
+
+    return {
+      fragmentCount,
+      fragmentLevels,
+      downloadQueueLength: this.downloadManager?.storage?.size || 0,
+      audioContextActive: !!this.audioContext,
+      syncedAudioPlayers: this.syncedAudioPlayer?.audioPlayers?.length || 0,
+      playerActive: !!this.player,
+      destroyed: this.destroyed,
+    };
   }
 
   /**
@@ -1038,7 +1066,7 @@ export class FastStreamClient extends EventEmitter {
    */
   mainloop() {
     if (this.destroyed) return;
-    setTimeout(this.mainloop.bind(this), 1000);
+    this._mainloopTimeout = setTimeout(this.mainloop.bind(this), 1000);
 
     if (this.needsUserInteraction()) {
       this.interfaceController.setStatusMessage(StatusTypes.REQINTERACTION, Localize.getMessage('player_needs_interaction'), 'warning clickable');
@@ -1246,6 +1274,14 @@ export class FastStreamClient extends EventEmitter {
     const promises = [];
     this.lastTime = 0;
 
+    for (const level in this.fragmentsStore) {
+      const frags = this.fragmentsStore[level];
+      if (frags) frags.forEach((f) => {
+        if (f) {
+          try { this.freeFragment(f); } catch (_) {}
+        }
+      });
+    }
     this.fragmentsStore = {};
     this.pastSeeks.length = 0;
     this.pastUnseeks.length = 0;
@@ -1351,6 +1387,10 @@ export class FastStreamClient extends EventEmitter {
     this.context.on(DefaultPlayerEvents.CANPLAY, (event) => {
       this.player.playbackRate = this.state.playbackRate;
 
+      if (this.options.loopByDefault) {
+        this.player.getVideo().loop = true;
+      }
+
       if (!this.state.autoPlayTriggered && this.options.autoPlay && this.state.playing === false) {
         this.state.autoPlayTriggered = true;
         this.play();
@@ -1375,6 +1415,11 @@ export class FastStreamClient extends EventEmitter {
 
 
     this.context.on(DefaultPlayerEvents.ENDED, (event) => {
+      if (this.options.loopByDefault) {
+        this.currentTime = 0;
+        this.play();
+        return;
+      }
       this.pause();
       if (this.options.autoplayNext) {
         this.nextVideo();
@@ -1721,20 +1766,20 @@ export class FastStreamClient extends EventEmitter {
 
     if (videoChanged) {
       if (this.options.freeUnusedChannels && this.fragmentsStore[previousVideoLevelID]) {
-        this.fragmentsStore[previousVideoLevelID].forEach((fragment, i) => {
-          if (i === -1) return;
-          this.freeFragment(fragment);
+        this.fragmentsStore[previousVideoLevelID].forEach((fragment) => {
+          if (fragment) this.freeFragment(fragment);
         });
+        delete this.fragmentsStore[previousVideoLevelID];
       }
       this.levelManager.setCurrentVideoLevelID(videoLevelID);
     }
 
     if (audioChanged) {
       if (this.options.freeUnusedChannels && this.fragmentsStore[previousAudioLevelID]) {
-        this.fragmentsStore[previousAudioLevelID].forEach((fragment, i) => {
-          if (i === -1) return;
-          this.freeFragment(fragment);
+        this.fragmentsStore[previousAudioLevelID].forEach((fragment) => {
+          if (fragment) this.freeFragment(fragment);
         });
+        delete this.fragmentsStore[previousAudioLevelID];
       }
       this.levelManager.setCurrentAudioLevelID(audioLevelID);
     }

@@ -140,10 +140,19 @@ export class PlaybackRateChanger extends EventEmitter {
       return;
     }
     const playbackRate = this.client.playbackRate;
+
+    // Throttle when tab is hidden — no point adjusting playback rate
+    if (document.hidden) {
+      setTimeout(this.silenceSkipperLoopHandle, 1000);
+      return;
+    }
+
     setTimeout(this.silenceSkipperLoopHandle, 100 / playbackRate);
 
     if (!this.client.player) return;
 
+    // Don't adjust rate while buffering — no reliable audio data
+    if (this.client.state.buffering) return;
 
     const time = this.client.currentTime;
     if (this.shouldSkipSilence(time)) {
@@ -174,14 +183,22 @@ export class PlaybackRateChanger extends EventEmitter {
     const outputRate = this.client.audioAnalyzer.getOutputRate();
     const minIndex = Math.floor((time - this.audioPaddingEnd) * outputRate);
     const maxIndex = Math.floor((time + this.audioPaddingStart) * outputRate);
+
+    let hasData = false;
+    let dataCount = 0;
+    const totalRange = maxIndex - minIndex;
     for (let i = minIndex; i < maxIndex; i++) {
       if (volumeBuffer[i] === undefined) continue;
+      hasData = true;
+      dataCount++;
       const volume = Utils.clamp((volumeBuffer[i] - minDB) / dbRange, 0, 1);
       if (volume >= this.silenceThreshold) {
         return false;
       }
     }
-    return true;
+    // Don't skip silence if we have insufficient audio data (< 25% coverage)
+    if (!hasData || (totalRange > 4 && dataCount < totalRange * 0.25)) return false;
+    return hasData;
   }
 
   enableSilenceSkipper() {
@@ -262,7 +279,17 @@ export class PlaybackRateChanger extends EventEmitter {
     this.stayOpen = false;
     return true;
   }
-
+  
+  reset() {
+    // Reset silence skipper state when a new video loads
+    if (this.silenceSkipperActive) {
+      this.disableSilenceSkipper();
+    }
+    this.silenceSkipperLoopRunning = false;
+    this.regularSpeed = 1;
+    this.silenceSkipSpeed = this.maxPlaybackRate;
+  }
+  
   isOpen() {
     return DOMElements.playbackRateMenuContainer.style.display !== 'none';
   }

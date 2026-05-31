@@ -123,6 +123,7 @@ export class TabHolder {
 export class TabTracker {
   constructor() {
     this.tabs = new Map();
+    // Cleanup is now driven by chrome.alarms in background.mjs
   }
 
   createTab(tabId) {
@@ -141,6 +142,35 @@ export class TabTracker {
 
   removeTab(tabId) {
     this.tabs.delete(tabId);
+  }
+
+  _cleanupStaleTabs() {
+    if (typeof chrome === 'undefined' || !chrome.tabs) return;
+    chrome.tabs.query({}, (activeTabs) => {
+      if (chrome.runtime.lastError || !this.tabs) return;
+      const activeIds = new Set(activeTabs.map(t => t.id));
+      for (const [tabId] of this.tabs) {
+        if (!activeIds.has(tabId)) {
+          this.removeTab(tabId);
+        }
+      }
+    });
+  }
+
+  destroy() {
+    this.tabs.clear();
+  }
+
+  size() {
+    return this.tabs.size;
+  }
+
+  totalPlayerCount() {
+    let count = 0;
+    for (const tab of this.tabs.values()) {
+      count += tab.playerCount;
+    }
+    return count;
   }
 
   getFrame(tabId, frameId) {

@@ -28,7 +28,6 @@
   let MiniplayerCooldown = 0;
   let Activated = false;
 
-  let resizeDebounce = Date.now();
   const Config = {
     softReplaceByDefault: true,
     hasCustomPlaylist: false,
@@ -305,15 +304,20 @@
           }
         }
 
-        // Add resize listener
+        // Add resize listener (rAF-batched)
+        pobj._rafPending = false;
         pobj.resizeObserver = new ResizeObserver(() => {
-          const now = Date.now();
-          if (now - resizeDebounce > 100) {
-            resizeDebounce = now;
-            updateReplacedPlayers();
+          if (!pobj._rafPending) {
+            pobj._rafPending = true;
+            requestAnimationFrame(() => {
+              pobj._rafPending = false;
+              updateReplacedPlayers();
+            });
           }
         });
-        pobj.resizeObserver.observe(iframe.parentNode);
+        if (iframe.parentNode) {
+          pobj.resizeObserver.observe(iframe.parentNode);
+        }
       }
       if (!Activated) {
         Activated = true;
@@ -507,41 +511,105 @@
     return true;
   }
 
+  function stopOrphanedPlayer(iframe) {
+    try {
+      iframe.src = 'about:blank';
+      iframe.style.setProperty('display', 'none', 'important');
+    } catch (e) {
+      // iframe may be inaccessible
+    }
+  }
+
   function removePlayers() {
     MiniplayerCooldown = Date.now() + 1000;
+    const frameIdsToRemove = [];
     iframeMap.forEach((iframeObj) => {
-      unmakeMiniPlayer(iframeObj);
+      try {
+        unmakeMiniPlayer(iframeObj);
+      } catch (e) {
+        // unmakeMiniPlayer may fail if DOM was modified by SPA navigation
+      }
       if (iframeObj.replacedData) {
         const replacedData = iframeObj.replacedData;
-        if (replacedData.softReplace) {
-          showSoft(replacedData.old);
-          replacedData.iframe.parentNode.removeChild(replacedData.iframe);
-        } else {
-          replacedData.iframe.parentNode.replaceChild(replacedData.old, replacedData.iframe);
+        let domRestored = false;
+        try {
+          if (replacedData.softReplace) {
+            showSoft(replacedData.old);
+            if (replacedData.iframe.parentNode) {
+              replacedData.iframe.parentNode.removeChild(replacedData.iframe);
+              domRestored = true;
+            }
+          } else {
+            if (replacedData.iframe.parentNode) {
+              replacedData.iframe.parentNode.replaceChild(replacedData.old, replacedData.iframe);
+              domRestored = true;
+            }
+          }
+        } catch (e) {
+          // DOM may have been modified by SPA navigation
         }
-        removePauseListeners(replacedData.old, replacedData.watcher);
+        if (!domRestored) {
+          stopOrphanedPlayer(replacedData.iframe);
+          showSoft(replacedData.old);
+        }
+        try {
+          removePauseListeners(replacedData.old, replacedData.watcher);
+        } catch (e) {
+          // watcher may already be cleaned up
+        }
 
-        replacedData.resizeObserver.disconnect();
+        try {
+          replacedData.resizeObserver.disconnect();
+        } catch (e) {
+          // resizeObserver may already be disconnected
+        }
 
         iframeObj.replacedData = null;
-
-        chrome.runtime.sendMessage({
-          type: MessageTypes.FRAME_REMOVED,
-          frameId: iframeObj.frameId,
-        });
       }
+
+      frameIdsToRemove.push(iframeObj.frameId);
+      chrome.runtime.sendMessage({
+        type: MessageTypes.FRAME_REMOVED,
+        frameId: iframeObj.frameId,
+      });
+
+      // Null out DOM references to allow GC — iframeMap entries are deleted below,
+      // so no code path should access these after this point
+      if (iframeObj.miniplayerState) {
+        iframeObj.miniplayerState.element = null;
+        iframeObj.miniplayerState.placeholder = null;
+      }
+      iframeObj.iframe = null;
     });
+
+    // Remove all entries from iframeMap
+    frameIdsToRemove.forEach((frameId) => iframeMap.delete(frameId));
 
     undoFillScreenIframe();
 
     replacedPlayerQueue.forEach((replacedData) => {
-      if (replacedData.softReplace) {
-        showSoft(replacedData.old);
-        replacedData.iframe.parentNode.removeChild(replacedData.iframe);
-      } else {
-        replacedData.iframe.parentNode.replaceChild(replacedData.old, replacedData.iframe);
+      let domRestored = false;
+      try {
+        if (replacedData.softReplace) {
+          showSoft(replacedData.old);
+          if (replacedData.iframe.parentNode) {
+            replacedData.iframe.parentNode.removeChild(replacedData.iframe);
+            domRestored = true;
+          }
+        } else {
+          if (replacedData.iframe.parentNode) {
+            replacedData.iframe.parentNode.replaceChild(replacedData.old, replacedData.iframe);
+            domRestored = true;
+          }
+        }
+        removePauseListeners(replacedData.old, replacedData.watcher);
+      } catch (e) {
+        // DOM may have been modified by SPA navigation
       }
-      removePauseListeners(replacedData.old, replacedData.watcher);
+      if (!domRestored) {
+        stopOrphanedPlayer(replacedData.iframe);
+        showSoft(replacedData.old);
+      }
     });
 
     replacedPlayerQueue.length = 0;
@@ -575,6 +643,7 @@
   }
 
   function resizeMiniPlayers() {
+    if (document.hidden) return;
     iframeMap.forEach((iframeObj) => {
       updateMiniPlayer(iframeObj);
     });
@@ -1361,7 +1430,7 @@
     if (isLinkToDifferentPageOnWebsite(url)) {
       removePlayers();
     }
-  }, true);
+  }, {capture: true, passive: true});
 
 
   document.addEventListener('fullscreenchange', () => {
@@ -1387,7 +1456,7 @@
   window.addEventListener('resize', () => {
     updateReplacedPlayers();
     resizeMiniPlayers();
-  });
+  }, {passive: true});
 
   window.addEventListener('beforeunload', () => {
     chrome.runtime.sendMessage({

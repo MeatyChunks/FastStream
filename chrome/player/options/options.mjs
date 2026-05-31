@@ -31,6 +31,7 @@ const maxSize = document.getElementById('maxsize');
 const seekStepSize = document.getElementById('seekstepsize');
 const autoplayYoutube = document.getElementById('autoplayyt');
 const autoplayNext = document.getElementById('autoplaynext');
+const loopByDefault = document.getElementById('loopbydefault');
 const qualityMenu = document.getElementById('quality');
 const importButton = document.getElementById('import');
 const exportButton = document.getElementById('export');
@@ -99,6 +100,7 @@ async function loadOptions(newOptions) {
   autoSub.checked = !!Options.autoEnableBestSubtitles;
   autoplayYoutube.checked = !!Options.autoplayYoutube;
   autoplayNext.checked = !!Options.autoplayNext;
+  loopByDefault.checked = !!Options.loopByDefault;
   maxSpeed.value = StringUtils.getSpeedString(Options.maxSpeed, true);
   maxSize.value = StringUtils.getSizeString(Options.maxVideoSize);
   seekStepSize.value = Math.round(Options.seekStepSize * 100) / 100;
@@ -397,6 +399,11 @@ autoplayYoutube.addEventListener('change', () => {
 autoplayNext.addEventListener('change', () => {
   Options.autoplayNext = autoplayNext.checked;
   sessionStorage.removeItem('autoplayNext');
+  optionChanged();
+});
+
+loopByDefault.addEventListener('change', () => {
+  Options.loopByDefault = loopByDefault.checked;
   optionChanged();
 });
 

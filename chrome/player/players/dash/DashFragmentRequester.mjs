@@ -10,6 +10,11 @@ export class DashFragmentRequester {
     const context = fragment.getContext();
     config = config || {};
 
+    // Analyzer/thumbnail player gets higher priority so thumbnails load first
+    if (this.player.isAnalyzer && priority !== -1) {
+      priority = 5;
+    }
+
     if (fragment.status === DownloadStatus.WAITING) {
       fragment.status = DownloadStatus.DOWNLOAD_INITIATED;
       this.player.emit(DefaultPlayerEvents.FRAGMENT_UPDATE, fragment);

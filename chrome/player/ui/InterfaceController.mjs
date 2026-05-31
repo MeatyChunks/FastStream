@@ -40,6 +40,16 @@ export class InterfaceController {
 
     this.failed = false;
 
+    this._boundListeners = [];
+    this._boundInteractHandler = (e) => { this.client.userInteracted(); };
+    this._boundPlayPauseToggle = this.playPauseToggle.bind(this);
+    this._boundUpdateFullScreenButton = this.updateFullScreenButton.bind(this);
+    this._boundOnPlayerMouseMove = this.onPlayerMouseMove.bind(this);
+    this._boundOnControlsMouseEnter = this.onControlsMouseEnter.bind(this);
+    this._boundOnControlsMouseLeave = this.onControlsMouseLeave.bind(this);
+    this._boundSkipSegment = this.skipSegment.bind(this);
+    this._boundProgressLoop = this.progressLoop.bind(this);
+
     this.toolManager = new ToolManager(this.client, this);
 
     this.toolManager.setupUI();
@@ -213,6 +223,7 @@ export class InterfaceController {
     DOMElements.playerContainer.classList.add('controls_visible');
     this.updateToolVisibility();
     this.fineTimeControls.reset();
+    this.playbackRateChanger.reset();
   }
 
   failedToLoad(reason) {
@@ -318,25 +329,27 @@ export class InterfaceController {
     this.progressBar.updateSkipSegments();
   }
 
+  _addListener(element, event, handler, options) {
+    element.addEventListener(event, handler, options);
+    this._boundListeners.push({ element, event, handler, options });
+  }
+
   setupDOM() {
-    const interactHandler = (e) => {
-      this.client.userInteracted();
-    };
+    this._addListener(DOMElements.playerContainer, 'keydown', this._boundInteractHandler, true);
+    this._addListener(DOMElements.playerContainer, 'mousedown', this._boundInteractHandler, true);
+    this._addListener(DOMElements.playerContainer, 'touchstart', this._boundInteractHandler, true);
 
-    DOMElements.playerContainer.addEventListener('keydown', interactHandler, true);
-    DOMElements.playerContainer.addEventListener('mousedown', interactHandler, true);
-    DOMElements.playerContainer.addEventListener('touchstart', interactHandler, true);
-
-    DOMElements.playPauseButton.addEventListener('click', this.playPauseToggle.bind(this));
+    this._addListener(DOMElements.playPauseButton, 'click', this._boundPlayPauseToggle);
     WebUtils.setupTabIndex(DOMElements.playPauseButton);
 
-    DOMElements.playPauseButtonBigCircle.addEventListener('click', (e) => {
+    this._boundPlayPauseButtonBigCircleClick = (e) => {
       this.hideControlBarOnAction();
       this.playPauseToggle();
       e.stopPropagation();
-    });
+    };
+    this._addListener(DOMElements.playPauseButtonBigCircle, 'click', this._boundPlayPauseButtonBigCircleClick);
 
-    DOMElements.fullscreen.addEventListener('click', (e)=>{
+    this._boundFullscreenClick = (e)=>{
       if (e.shiftKey) {
         this.pipToggle();
         return;
@@ -347,43 +360,49 @@ export class InterfaceController {
 
       this.fullscreenToggle();
       e.stopPropagation();
-    });
+    };
+    this._addListener(DOMElements.fullscreen, 'click', this._boundFullscreenClick);
 
-    DOMElements.fullscreen.addEventListener('contextmenu', (e) => {
+    this._boundFullscreenContextmenu = (e) => {
       e.preventDefault();
       e.stopPropagation();
       this.toggleWindowedFullscreen();
-    });
+    };
+    this._addListener(DOMElements.fullscreen, 'contextmenu', this._boundFullscreenContextmenu);
 
     WebUtils.setupTabIndex(DOMElements.fullscreen);
 
-    DOMElements.windowedFullscreen.addEventListener('click', (e)=>{
+    this._boundWindowedFullscreenClick = (e)=>{
       this.toggleWindowedFullscreen();
-    });
+    };
+    this._addListener(DOMElements.windowedFullscreen, 'click', this._boundWindowedFullscreenClick);
     WebUtils.setupTabIndex(DOMElements.windowedFullscreen);
 
-    document.addEventListener('fullscreenchange', this.updateFullScreenButton.bind(this));
+    this._addListener(document, 'fullscreenchange', this._boundUpdateFullScreenButton);
 
-    DOMElements.playerContainer.addEventListener('mousemove', this.onPlayerMouseMove.bind(this));
-    DOMElements.controlsContainer.addEventListener('mouseenter', this.onControlsMouseEnter.bind(this));
-    DOMElements.controlsContainer.addEventListener('mouseleave', this.onControlsMouseLeave.bind(this));
-    DOMElements.controlsContainer.addEventListener('focusin', ()=>{
+    this._addListener(DOMElements.playerContainer, 'mousemove', this._boundOnPlayerMouseMove);
+    this._addListener(DOMElements.controlsContainer, 'mouseenter', this._boundOnControlsMouseEnter);
+    this._addListener(DOMElements.controlsContainer, 'mouseleave', this._boundOnControlsMouseLeave);
+    this._boundControlsFocusin = ()=>{
       this.focusingControls = true;
       this.showControlBar();
-    });
-    DOMElements.controlsContainer.addEventListener('focusout', ()=>{
+    };
+    this._addListener(DOMElements.controlsContainer, 'focusin', this._boundControlsFocusin);
+    this._boundControlsFocusout = ()=>{
       this.focusingControls = false;
       this.queueControlsHide();
-    });
+    };
+    this._addListener(DOMElements.controlsContainer, 'focusout', this._boundControlsFocusout);
 
-    DOMElements.playerContainer.addEventListener('mouseleave', (e)=>{
+    this._boundPlayerMouseleave = (e)=>{
       this.queueControlsHide(1);
-    });
+    };
+    this._addListener(DOMElements.playerContainer, 'mouseleave', this._boundPlayerMouseleave);
 
     let holdTimeout = null;
     let lastSpeed = null;
     let wasPlaying = false;
-    DOMElements.videoContainer.addEventListener('mousedown', (e)=>{
+    this._boundVideoMousedown = (e)=>{
       if (e.button === 0) {
         clearTimeout(holdTimeout);
         holdTimeout = setTimeout(() => {
@@ -397,7 +416,8 @@ export class InterfaceController {
           this.client.play();
         }, 800);
       }
-    });
+    };
+    this._addListener(DOMElements.videoContainer, 'mousedown', this._boundVideoMousedown);
 
     const stopSpeedUp = () => {
       if (lastSpeed !== null) {
@@ -411,17 +431,14 @@ export class InterfaceController {
       clearTimeout(holdTimeout);
     };
 
-    // DOMElements.videoContainer.addEventListener('mouseup', (e)=>{
-    //   stopSpeedUp();
-    // });
-
-    DOMElements.videoContainer.addEventListener('mouseleave', (e)=>{
+    this._boundVideoMouseleave = (e)=>{
       stopSpeedUp();
-    });
+    };
+    this._addListener(DOMElements.videoContainer, 'mouseleave', this._boundVideoMouseleave);
 
     let clickCount = 0;
     let clickTimeout = null;
-    DOMElements.videoContainer.addEventListener('click', (e) => {
+    this._boundVideoClick = (e) => {
       clearTimeout(holdTimeout);
       if (lastSpeed !== null) {
         stopSpeedUp();
@@ -484,82 +501,94 @@ export class InterfaceController {
             break;
         }
       }, clickCount < 3 ? 300 : 0);
-    });
-    DOMElements.hideButton.addEventListener('click', () => {
+    };
+    this._addListener(DOMElements.videoContainer, 'click', this._boundVideoClick);
+
+    this._boundHideButtonClick = () => {
       DOMElements.hideButton.blur();
       this.focusingControls = false;
       this.hideControlBar();
-    });
+    };
+    this._addListener(DOMElements.hideButton, 'click', this._boundHideButtonClick);
 
     WebUtils.setupTabIndex(DOMElements.hideButton);
 
-    DOMElements.resetFailed.addEventListener('click', (e) => {
+    this._boundResetFailedClick = (e) => {
       this.client.resetFailed();
       e.stopPropagation();
-    });
+    };
+    this._addListener(DOMElements.resetFailed, 'click', this._boundResetFailedClick);
     WebUtils.setupTabIndex(DOMElements.resetFailed);
 
-    DOMElements.skipButton.addEventListener('click', this.skipSegment.bind(this));
+    this._addListener(DOMElements.skipButton, 'click', this._boundSkipSegment);
 
-    DOMElements.pip.addEventListener('click', (e) => {
+    this._boundPipClick = (e) => {
       this.pipToggle();
-    });
+    };
+    this._addListener(DOMElements.pip, 'click', this._boundPipClick);
 
     WebUtils.setupTabIndex(DOMElements.pip);
 
-    DOMElements.playerContainer.addEventListener('dragenter', (e) => {
+    this._boundDragenter = (e) => {
       e.stopPropagation();
       e.preventDefault();
-    }, false);
-    DOMElements.playerContainer.addEventListener('dragover', (e) => {
+    };
+    this._addListener(DOMElements.playerContainer, 'dragenter', this._boundDragenter, false);
+    this._boundDragover = (e) => {
       e.stopPropagation();
       e.preventDefault();
-    }, false);
+    };
+    this._addListener(DOMElements.playerContainer, 'dragover', this._boundDragover, false);
 
-    DOMElements.settingsButton.addEventListener('click', (e) => {
+    this._boundSettingsClick = (e) => {
       if (e.shiftKey) {
         chrome.runtime.openOptionsPage();
       } else {
         this.optionsWindow.toggleUI();
       }
       e.stopPropagation();
-    });
+    };
+    this._addListener(DOMElements.settingsButton, 'click', this._boundSettingsClick);
     WebUtils.setupTabIndex(DOMElements.settingsButton);
 
     const welcomeText = Localize.getMessage('player_welcometext', [this.client.version]);
     this.setStatusMessage('welcome', welcomeText, 'info', 3000);
 
-    DOMElements.controlsContainer.addEventListener('click', (e) => {
+    this._boundControlsContainerClick = (e) => {
       e.stopPropagation();
-    });
+    };
+    this._addListener(DOMElements.controlsContainer, 'click', this._boundControlsContainerClick);
 
-    document.addEventListener('visibilitychange', ()=>{
+    this._boundVisibilityChange = ()=>{
       if (!document.hidden) {
         this.handleVisibilityChange(true);
       } else {
         this.handleVisibilityChange(false);
       }
-    });
+    };
+    this._addListener(document, 'visibilitychange', this._boundVisibilityChange);
 
-    DOMElements.skipForwardButton.addEventListener('click', (e) => {
+    this._boundSkipForwardClick = (e) => {
       this.client.setSeekSave(false);
       this.client.currentTime += this.client.options.seekStepSize * 5;
       this.client.setSeekSave(true);
       e.stopPropagation();
-    });
+    };
+    this._addListener(DOMElements.skipForwardButton, 'click', this._boundSkipForwardClick);
 
     WebUtils.setupTabIndex(DOMElements.skipForwardButton);
 
-    DOMElements.skipBackwardButton.addEventListener('click', (e) => {
+    this._boundSkipBackwardClick = (e) => {
       this.client.setSeekSave(false);
       this.client.currentTime += -this.client.options.seekStepSize * 5;
       this.client.setSeekSave(true);
       e.stopPropagation();
-    });
+    };
+    this._addListener(DOMElements.skipBackwardButton, 'click', this._boundSkipBackwardClick);
 
     WebUtils.setupTabIndex(DOMElements.skipBackwardButton);
 
-    DOMElements.moreButton.addEventListener('click', (e) => {
+    this._boundMoreButtonClick = (e) => {
       if (!DOMElements.extraTools.classList.contains('visible')) {
         this.closeAllMenus(true);
         DOMElements.extraTools.classList.add('visible');
@@ -567,10 +596,11 @@ export class InterfaceController {
         DOMElements.extraTools.classList.remove('visible');
       }
       e.stopPropagation();
-    });
+    };
+    this._addListener(DOMElements.moreButton, 'click', this._boundMoreButtonClick);
     WebUtils.setupTabIndex(DOMElements.moreButton);
 
-    DOMElements.duration.addEventListener('click', (e) => {
+    this._boundDurationClick = (e) => {
       let copyURL = '';
       if (this.client.source) {
         const source = this.client.source;
@@ -601,10 +631,11 @@ export class InterfaceController {
       DOMElements.playerContainer.removeChild(input);
 
       this.setStatusMessage(StatusTypes.COPY, Localize.getMessage('source_copied'), 'info', 2000);
-    });
+    };
+    this._addListener(DOMElements.duration, 'click', this._boundDurationClick);
     WebUtils.setupTabIndex(DOMElements.duration);
 
-    DOMElements.nextVideo.addEventListener('click', (e) => {
+    this._boundNextVideoClick = (e) => {
       if (e.shiftKey || e.altKey) {
         this.toggleAutoplayNext();
         return;
@@ -612,24 +643,27 @@ export class InterfaceController {
 
       this.client.nextVideo();
       e.stopPropagation();
-    });
+    };
+    this._addListener(DOMElements.nextVideo, 'click', this._boundNextVideoClick);
 
-    DOMElements.nextVideo.addEventListener('contextmenu', (e) => {
+    this._boundNextVideoContextmenu = (e) => {
       e.preventDefault();
       e.stopPropagation();
       this.toggleAutoplayNext();
-    });
+    };
+    this._addListener(DOMElements.nextVideo, 'contextmenu', this._boundNextVideoContextmenu);
 
     WebUtils.setupTabIndex(DOMElements.nextVideo);
 
-    DOMElements.previousVideo.addEventListener('click', (e) => {
+    this._boundPreviousVideoClick = (e) => {
       this.client.previousVideo();
       e.stopPropagation();
-    });
+    };
+    this._addListener(DOMElements.previousVideo, 'click', this._boundPreviousVideoClick);
 
     WebUtils.setupTabIndex(DOMElements.previousVideo);
 
-    const o = new IntersectionObserver(([entry]) => {
+    this._intersectionObserver = new IntersectionObserver(([entry]) => {
       if (entry.intersectionRatio > 0.25 && !document.hidden) {
         this.handleVisibilityChange(true);
       } else {
@@ -639,7 +673,7 @@ export class InterfaceController {
       threshold: [0, 0.25, 0.5],
     });
 
-    o.observe(document.body);
+    this._intersectionObserver.observe(document.body);
     try {
       // eslint-disable-next-line new-cap
       Coloris({
@@ -662,13 +696,13 @@ export class InterfaceController {
       console.warn('Coloris failed to initialize', e);
     }
 
-    const mouseUpHandler = (e) => {
-      DOMElements.playerContainer.removeEventListener('mousemove', mouseMoveHandler);
-      DOMElements.playerContainer.removeEventListener('mouseup', mouseUpHandler);
-      DOMElements.playerContainer.removeEventListener('mouseleave', mouseUpHandler);
+    this._mouseUpHandler = (e) => {
+      DOMElements.playerContainer.removeEventListener('mousemove', this._mouseMoveHandler);
+      DOMElements.playerContainer.removeEventListener('mouseup', this._mouseUpHandler);
+      DOMElements.playerContainer.removeEventListener('mouseleave', this._mouseUpHandler);
     };
 
-    const mouseMoveHandler = (e) => {
+    this._mouseMoveHandler = (e) => {
       const currentY = Math.min(Math.max(e.clientY - WebUtils.getOffsetTop(DOMElements.progressContainer), -100), 100);
       const isExpanded = DOMElements.playerContainer.classList.contains('expanded');
       const offset = isExpanded ? 0 : 80;
@@ -679,7 +713,7 @@ export class InterfaceController {
       }
     };
 
-    DOMElements.controlsLeft.addEventListener('mousedown', (e) => {
+    this._boundControlsLeftMousedown = (e) => {
       if (e.button !== 0) {
         return;
       }
@@ -690,10 +724,11 @@ export class InterfaceController {
       }
 
 
-      DOMElements.playerContainer.addEventListener('mousemove', mouseMoveHandler);
-      DOMElements.playerContainer.addEventListener('mouseup', mouseUpHandler, true);
-      DOMElements.playerContainer.addEventListener('mouseleave', mouseUpHandler);
-    });
+      DOMElements.playerContainer.addEventListener('mousemove', this._mouseMoveHandler);
+      DOMElements.playerContainer.addEventListener('mouseup', this._mouseUpHandler, true);
+      DOMElements.playerContainer.addEventListener('mouseleave', this._mouseUpHandler);
+    };
+    this._addListener(DOMElements.controlsLeft, 'mousedown', this._boundControlsLeftMousedown);
   }
 
   toggleAutoplayNext() {
@@ -922,6 +957,15 @@ export class InterfaceController {
   }
 
   destroy() {
+    this.shouldRunProgressLoop = false;
+    this._boundListeners.forEach(({ element, event, handler, options }) => {
+      element.removeEventListener(event, handler, options);
+    });
+    this._boundListeners = [];
+    if (this._intersectionObserver) {
+      this._intersectionObserver.disconnect();
+      this._intersectionObserver = null;
+    }
     this.saveManager.destroy();
   }
 
@@ -930,7 +974,7 @@ export class InterfaceController {
       this.isRunningProgressLoop = false;
       return;
     }
-    window.requestAnimationFrame(this.progressLoop.bind(this));
+    window.requestAnimationFrame(this._boundProgressLoop);
     this.client.updateTime(this.client.currentTime);
   }
 
