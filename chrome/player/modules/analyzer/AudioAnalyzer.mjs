@@ -147,6 +147,7 @@ export class AudioAnalyzer extends EventEmitter {
   }
 
   setupAnalyzerNodeForMainPlayer(videoElement, audioOutputNode, audioContext, getTime) {
+    this.audioContext = audioContext;
     if (this.analyzerNodes.has('main')) {
       this.analyzerNodes.get('main').destroy();
     }

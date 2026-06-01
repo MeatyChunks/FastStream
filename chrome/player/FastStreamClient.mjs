@@ -1447,11 +1447,17 @@ export class FastStreamClient extends EventEmitter {
 
     this.context.on(DefaultPlayerEvents.PAUSE, (event) => {
       this.interfaceController.pause();
+      if (this.audioContext && this.audioContext.state === 'running') {
+        this.audioContext.suspend().catch(() => {});
+      }
     });
 
 
     this.context.on(DefaultPlayerEvents.PLAY, (event) => {
       this.interfaceController.play();
+      if (this.audioContext && this.audioContext.state === 'suspended') {
+        this.audioContext.resume().catch(() => {});
+      }
     });
 
 
