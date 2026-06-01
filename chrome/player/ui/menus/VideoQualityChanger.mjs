@@ -137,10 +137,10 @@ export class VideoQualityChanger extends EventEmitter {
     const videoLevels = client.getVideoLevels();
     const sources = client.sourcesBrowser ? client.sourcesBrowser.sources.filter(s => s.url) : [];
 
-    const hasInternalLevels = videoLevels && videoLevels.size > 1;
-    const hasMultipleSources = sources.length > 1;
+    const hasInternalLevels = videoLevels && videoLevels.size >= 1;
+    const hasSources = sources.length >= 1;
 
-    if (!hasInternalLevels && !hasMultipleSources) {
+    if (!hasInternalLevels && !hasSources) {
       DOMElements.videoSource.classList.add('hidden');
       return;
     } else {
