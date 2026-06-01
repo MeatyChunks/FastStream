@@ -251,6 +251,10 @@ export class PlaybackRateChanger extends EventEmitter {
     this.client.audioAnalyzer.removeVolumeDependent(this);
     this.client.audioAnalyzer.removeBackgroundDependent(this);
     this.closeSilenceSkipperUI();
+
+    if (this.client.playbackRate !== this.regularSpeed) {
+      this.client.playbackRate = this.regularSpeed;
+    }
   }
 
   toggleSilenceSkipper() {
@@ -305,6 +309,7 @@ export class PlaybackRateChanger extends EventEmitter {
     this.silenceSkipperLoopRunning = false;
     this.regularSpeed = 1;
     this.silenceSkipSpeed = this.maxPlaybackRate;
+    this.client.playbackRate = this.regularSpeed;
   }
   
   isOpen() {
