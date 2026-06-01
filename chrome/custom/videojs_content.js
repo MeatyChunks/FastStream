@@ -1,3 +1,5 @@
+const sentUrls = new Set();
+
 // Listen for sources posted from the page world
 window.addEventListener('message', (event) => {
   if (event.origin !== window.location.origin) {
@@ -12,6 +14,11 @@ window.addEventListener('message', (event) => {
     const sources = event.data.sources;
     if (Array.isArray(sources)) {
       sources.forEach((s) => {
+        if (sentUrls.has(s.src)) {
+          return;
+        }
+        sentUrls.add(s.src);
+
         // Send each quality option to the background script
         chrome.runtime.sendMessage({
           type: 'DETECTED_SOURCE',

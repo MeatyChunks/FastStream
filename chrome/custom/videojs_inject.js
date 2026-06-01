@@ -1,6 +1,8 @@
 (function() {
   let hookedPlayers = new Set();
 
+  let lastSentSourcesStr = '';
+
   function sendSources(player) {
     try {
       // Retrieve current sources list from VideoJS player instance
@@ -20,6 +22,12 @@
         })).filter(s => s.src && s.src.startsWith('http'));
 
         if (formattedSources.length > 0) {
+          const sourcesStr = JSON.stringify(formattedSources);
+          if (sourcesStr === lastSentSourcesStr) {
+            return;
+          }
+          lastSentSourcesStr = sourcesStr;
+
           window.postMessage({
             type: 'fs_videojs_sources',
             sources: formattedSources
