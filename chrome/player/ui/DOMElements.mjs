@@ -12,6 +12,7 @@ export const DOMElements = {
   windowedFullscreen: document.querySelector('.mainplayer .fluid_control_windowed_fullscreen'),
   subtitles: document.querySelector('.mainplayer .fluid_control_subtitles'),
   videoSource: document.querySelector('.mainplayer .fluid_control_video_source'),
+  videoSourceLabel: document.querySelector('.mainplayer .fluid_control_video_source .quality-label'),
   videoSourceList: document.querySelector('.mainplayer .fluid_video_sources_list'),
   audioSourceList: document.querySelector('.mainplayer .fluid_audio_sources_list'),
   playbackRate: document.querySelector('.mainplayer .fluid_button_playback_rate'),

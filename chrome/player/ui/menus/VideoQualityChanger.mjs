@@ -340,5 +340,16 @@ export class VideoQualityChanger extends EventEmitter {
         element.style.display = '';
       }
     }
+
+    const labelElement = DOMElements.videoSourceLabel;
+    if (labelElement) {
+      if (maxSize > 0) {
+        labelElement.textContent = maxSize + 'p';
+        labelElement.style.display = 'inline-block';
+      } else {
+        labelElement.textContent = '';
+        labelElement.style.display = 'none';
+      }
+    }
   }
 }
