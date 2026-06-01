@@ -135,180 +135,281 @@ export class VideoQualityChanger extends EventEmitter {
 
   updateQualityLevels(client) {
     const videoLevels = client.getVideoLevels();
-    if (!videoLevels || videoLevels.size < 1) {
+    const sources = client.sourcesBrowser ? client.sourcesBrowser.sources.filter(s => s.url) : [];
+
+    const hasInternalLevels = videoLevels && videoLevels.size > 1;
+    const hasMultipleSources = sources.length > 1;
+
+    if (!hasInternalLevels && !hasMultipleSources) {
       DOMElements.videoSource.classList.add('hidden');
       return;
     } else {
       DOMElements.videoSource.classList.remove('hidden');
     }
 
-    const videoLevelsByDimensions = this.groupLevelsByDimensions(client.getLevelManager().filterVideoLevelsByLanguage(Array.from(videoLevels.values())));
-    const currentVideoLevelID = client.getCurrentVideoLevelID();
-
     DOMElements.videoSourceList.replaceChildren();
 
-    videoLevelsByDimensions.forEach((levels, dimensions) => {
-      const isLevelActive = levels.some((level) => level.id === currentVideoLevelID);
+    if (hasInternalLevels) {
+      const videoLevelsByDimensions = this.groupLevelsByDimensions(client.getLevelManager().filterVideoLevelsByLanguage(Array.from(videoLevels.values())));
+      const currentVideoLevelID = client.getCurrentVideoLevelID();
 
-      if (dimensions === '0x0') {
-        if (isLevelActive && client.videoWidth > 0 && client.videoHeight > 0) {
-          dimensions = `${client.videoWidth}x${client.videoHeight}`;
-        } else {
-          dimensions = Localize.getMessage('player_quality_unknown');
+      videoLevelsByDimensions.forEach((levels, dimensions) => {
+        const isLevelActive = levels.some((level) => level.id === currentVideoLevelID);
+
+        if (dimensions === '0x0') {
+          if (isLevelActive && client.videoWidth > 0 && client.videoHeight > 0) {
+            dimensions = `${client.videoWidth}x${client.videoHeight}`;
+          } else {
+            dimensions = Localize.getMessage('player_quality_unknown');
+          }
         }
-      }
-      const levelelement = document.createElement('div');
+        const levelelement = document.createElement('div');
 
-      levelelement.classList.add('fluid_video_source_list_item');
-      levelelement.addEventListener('click', (e) => {
-        const chosen = client.getLevelManager().pickVideoLevel(levels, null, true);
-        if (!chosen) {
-          console.warn('No level chosen');
+        levelelement.classList.add('fluid_video_source_list_item');
+        levelelement.addEventListener('click', (e) => {
+          const chosen = client.getLevelManager().pickVideoLevel(levels, null, true);
+          if (!chosen) {
+            console.warn('No level chosen');
+            e.stopPropagation();
+            return;
+          }
+
+          // if already active, do nothing
+          const currentLevelID = client.getCurrentVideoLevelID();
+          if (chosen.id === currentLevelID) {
+            e.stopPropagation();
+            return;
+          }
+
+          Array.from(DOMElements.videoSourceList.getElementsByClassName('source_active')).forEach((element) => {
+            element.classList.remove('source_active');
+          });
+          this.emit('qualityChanged', chosen, levels.length <= 1);
+          levelelement.classList.add('source_active');
           e.stopPropagation();
-          return;
-        }
-
-        // if already active, do nothing
-        const currentLevelID = client.getCurrentVideoLevelID();
-        if (chosen.id === currentLevelID) {
-          e.stopPropagation();
-          return;
-        }
-
-        Array.from(DOMElements.videoSourceList.getElementsByClassName('source_active')).forEach((element) => {
-          element.classList.remove('source_active');
         });
-        this.emit('qualityChanged', chosen, levels.length <= 1);
-        levelelement.classList.add('source_active');
-        e.stopPropagation();
-      });
 
-      if (isLevelActive && levels.length <= 1) {
-        levelelement.classList.add('source_active');
-      } else if (isLevelActive) {
-        levelelement.classList.add('subsource_active');
-      }
-
-      // sort levels by bitrate ascending
-      levels.sort((a, b) => a.bitrate - b.bitrate);
-
-      const icon = document.createElement('span');
-      icon.classList.add('source_button_icon');
-
-      const text = document.createElement('span');
-      const label = `${dimensions}${(levels.length > 1 && isLevelActive) ? '' : ` @${levels.length > 1 ? `${Math.round(levels[0].bitrate / 1000)}-${Math.round(levels[levels.length - 1].bitrate / 1000)}` : Math.round(levels[0].bitrate / 1000)} kbps`}`;
-
-      text.textContent = (isLevelActive && levels.length <= 1) ? label + ' ' + Localize.getMessage('player_quality_current') : (isLevelActive ? (label + ' ▼') : label);
-
-      const audioCodecSet = new Set();
-      const videoCodecSet = new Set();
-      const containerSet = new Set();
-      const languageSet = new Set();
-      levels.forEach((lvl) => {
-        if (lvl.audioCodec) {
-          audioCodecSet.add(lvl.audioCodec);
+        if (isLevelActive && levels.length <= 1) {
+          levelelement.classList.add('source_active');
+        } else if (isLevelActive) {
+          levelelement.classList.add('subsource_active');
         }
-        if (lvl.videoCodec) {
-          videoCodecSet.add(lvl.videoCodec);
+
+        // sort levels by bitrate ascending
+        levels.sort((a, b) => a.bitrate - b.bitrate);
+
+        const icon = document.createElement('span');
+        icon.classList.add('source_button_icon');
+
+        let height = levels[0].height;
+        if (height <= 0 && dimensions.includes('x')) {
+          height = parseInt(dimensions.split('x')[1]);
         }
-        if (lvl.mimeType) {
-          const mimeParts = lvl.mimeType.split('/');
-          if (mimeParts.length >= 2) {
-            containerSet.add(mimeParts[1]);
-          }
+
+        let badge = '';
+        if (height > 0) {
+          if (height < 720) badge = 'SD';
+          else if (height < 1080) badge = 'HD';
+          else if (height < 1440) badge = 'FHD';
+          else if (height < 2160) badge = '2K';
+          else if (height < 4320) badge = '4K';
+          else badge = '8K';
         }
-        if (lvl.language) {
-          languageSet.add(lvl.language);
+
+        const resText = height > 0 ? `${height}p` : dimensions;
+        const displayLabel = badge ? `${resText} (${badge})` : resText;
+
+        const text = document.createElement('span');
+        const label = `${displayLabel}${(levels.length > 1 && isLevelActive) ? '' : ` @${levels.length > 1 ? `${Math.round(levels[0].bitrate / 1000)}-${Math.round(levels[levels.length - 1].bitrate / 1000)}` : Math.round(levels[0].bitrate / 1000)} kbps`}`;
+
+        text.textContent = (isLevelActive && levels.length <= 1) ? label + ' ' + Localize.getMessage('player_quality_current') : (isLevelActive ? (label + ' ▼') : label);
+
+        const audioCodecSet = new Set();
+        const videoCodecSet = new Set();
+        const containerSet = new Set();
+        const languageSet = new Set();
+        levels.forEach((lvl) => {
+          if (lvl.audioCodec) {
+            audioCodecSet.add(lvl.audioCodec);
+          }
+          if (lvl.videoCodec) {
+            videoCodecSet.add(lvl.videoCodec);
+          }
+          if (lvl.mimeType) {
+            const mimeParts = lvl.mimeType.split('/');
+            if (mimeParts.length >= 2) {
+              containerSet.add(mimeParts[1]);
+            }
+          }
+          if (lvl.language) {
+            languageSet.add(lvl.language);
+          }
+        });
+
+        const titleParts = [];
+        titleParts.push(`IDs: ${levels.map((o) => o.id).join(', ')}`);
+        if (containerSet.size > 0) {
+          titleParts.push(`Containers: ${Array.from(containerSet).join(', ')}`);
         }
-      });
+        titleParts.push(`Bitrate: ${levels.length > 1 ? levels.map((lvl) => lvl.bitrate).join(', ') + ' bps' : levels[0].bitrate + ' bps'}`);
 
-      const titleParts = [];
-      titleParts.push(`IDs: ${levels.map((o) => o.id).join(', ')}`);
-      if (containerSet.size > 0) {
-        titleParts.push(`Containers: ${Array.from(containerSet).join(', ')}`);
-      }
-      titleParts.push(`Bitrate: ${levels.length > 1 ? levels.map((lvl) => lvl.bitrate).join(', ') + ' bps' : levels[0].bitrate + ' bps'}`);
+        if (videoCodecSet.size > 0) {
+          titleParts.push(`Video codecs: ${Array.from(videoCodecSet).join(', ')}`);
+        }
+        if (audioCodecSet.size > 0) {
+          titleParts.push(`Audio codecs: ${Array.from(audioCodecSet).join(', ')}`);
+        }
+        if (languageSet.size > 0) {
+          titleParts.push(`Languages: ${Array.from(languageSet).join(', ')}`);
+        }
+        if (dimensions !== '0x0') {
+          titleParts.push(`Dimensions: ${dimensions}`);
+        }
+        levelelement.title = titleParts.join('\n');
+        levelelement.appendChild(text);
 
-      if (videoCodecSet.size > 0) {
-        titleParts.push(`Video codecs: ${Array.from(videoCodecSet).join(', ')}`);
-      }
-      if (audioCodecSet.size > 0) {
-        titleParts.push(`Audio codecs: ${Array.from(audioCodecSet).join(', ')}`);
-      }
-      if (languageSet.size > 0) {
-        titleParts.push(`Languages: ${Array.from(languageSet).join(', ')}`);
-      }
-      if (dimensions !== '0x0') {
-        titleParts.push(`Dimensions: ${dimensions}`);
-      }
-      levelelement.title = titleParts.join('\n');
-      levelelement.appendChild(text);
+        DOMElements.videoSourceList.appendChild(levelelement);
 
-      DOMElements.videoSourceList.appendChild(levelelement);
+        if (levels.length > 1 && isLevelActive) {
+          // Add sub-level elements
+          levels.forEach((level) => {
+            const subLevelElement = document.createElement('div');
+            subLevelElement.classList.add('fluid_video_source_sublist_item');
+            const mimeParts = level.mimeType ? level.mimeType.split('/') : [];
+            const container = (mimeParts.length >= 2) ? mimeParts[1] : '';
 
-      if (levels.length > 1 && isLevelActive) {
-        // Add sub-level elements
-        levels.forEach((level) => {
-          const subLevelElement = document.createElement('div');
-          subLevelElement.classList.add('fluid_video_source_sublist_item');
-          const mimeParts = level.mimeType ? level.mimeType.split('/') : [];
-          const container = (mimeParts.length >= 2) ? mimeParts[1] : '';
-
-          const isActive = level.id === currentVideoLevelID;
-          if (isActive) {
-            subLevelElement.classList.add('source_active');
-          }
-
-          const text = document.createElement('span');
-          text.textContent = `${container} @${Math.round(level.bitrate / 1000)} kbps${level.id === currentVideoLevelID ? ' ' + Localize.getMessage('player_quality_current') : ''}`;
-          const titleParts = [];
-          titleParts.push(`ID: ${level.id}`);
-          if (container) {
-            titleParts.push(`Container: ${container}`);
-          }
-          titleParts.push(`Bitrate: ${level.bitrate} bps`);
-          if (level.videoCodec) {
-            titleParts.push(`Video codec: ${level.videoCodec}`);
-          }
-          if (level.audioCodec) {
-            titleParts.push(`Audio codec: ${level.audioCodec}`);
-          }
-          if (level.language) {
-            titleParts.push(`Language: ${level.language}`);
-          }
-          if (dimensions !== '0x0') {
-            titleParts.push(`Dimensions: ${dimensions}`);
-          }
-          subLevelElement.title = titleParts.join('\n');
-          subLevelElement.appendChild(text);
-
-          subLevelElement.addEventListener('click', (e) => {
-            // if already active, do nothing
-            const currentLevelID = client.getCurrentVideoLevelID();
-            if (level.id === currentLevelID) {
-              e.stopPropagation();
-              return;
+            const isActive = level.id === currentVideoLevelID;
+            if (isActive) {
+              subLevelElement.classList.add('source_active');
             }
 
-            Array.from(DOMElements.videoSourceList.getElementsByClassName('source_active')).forEach((element) => {
-              element.classList.remove('source_active');
+            const text = document.createElement('span');
+            text.textContent = `${container} @${Math.round(level.bitrate / 1000)} kbps${level.id === currentVideoLevelID ? ' ' + Localize.getMessage('player_quality_current') : ''}`;
+            const titleParts = [];
+            titleParts.push(`ID: ${level.id}`);
+            if (container) {
+              titleParts.push(`Container: ${container}`);
+            }
+            titleParts.push(`Bitrate: ${level.bitrate} bps`);
+            if (level.videoCodec) {
+              titleParts.push(`Video codec: ${level.videoCodec}`);
+            }
+            if (level.audioCodec) {
+              titleParts.push(`Audio codec: ${level.audioCodec}`);
+            }
+            if (level.language) {
+              titleParts.push(`Language: ${level.language}`);
+            }
+            if (dimensions !== '0x0') {
+              titleParts.push(`Dimensions: ${dimensions}`);
+            }
+            subLevelElement.title = titleParts.join('\n');
+            subLevelElement.appendChild(text);
+
+            subLevelElement.addEventListener('click', (e) => {
+              // if already active, do nothing
+              const currentLevelID = client.getCurrentVideoLevelID();
+              if (level.id === currentLevelID) {
+                e.stopPropagation();
+                return;
+              }
+
+              Array.from(DOMElements.videoSourceList.getElementsByClassName('source_active')).forEach((element) => {
+                element.classList.remove('source_active');
+              });
+              this.emit('qualityChanged', level, true);
+              subLevelElement.classList.add('source_active');
+              e.stopPropagation();
             });
-            this.emit('qualityChanged', level, true);
-            subLevelElement.classList.add('source_active');
-            e.stopPropagation();
+            DOMElements.videoSourceList.appendChild(subLevelElement);
           });
-          DOMElements.videoSourceList.appendChild(subLevelElement);
+        }
+      });
+    } else {
+      // Multiple external sources (e.g. parsed from VideoJS players)
+      sources.forEach((source) => {
+        const isSourceActive = source.equals(client.source);
+
+        let height = 0;
+        if (source.res) {
+          height = parseInt(source.res);
+        } else if (source.label) {
+          height = parseInt(source.label.replace(/p/gi, ''));
+        }
+
+        if (height <= 0) {
+          const match = source.url.match(/(\d+)p/i);
+          if (match) {
+            height = parseInt(match[1]);
+          }
+        }
+
+        let badge = '';
+        if (height > 0) {
+          if (height < 720) badge = 'SD';
+          else if (height < 1080) badge = 'HD';
+          else if (height < 1440) badge = 'FHD';
+          else if (height < 2160) badge = '2K';
+          else if (height < 4320) badge = '4K';
+          else badge = '8K';
+        }
+
+        const resText = height > 0 ? `${height}p` : (source.label || 'Unknown');
+        const displayLabel = badge ? `${resText} (${badge})` : resText;
+
+        const levelelement = document.createElement('div');
+        levelelement.classList.add('fluid_video_source_list_item');
+        if (isSourceActive) {
+          levelelement.classList.add('source_active');
+        }
+
+        const text = document.createElement('span');
+        const label = displayLabel;
+        text.textContent = isSourceActive ? label + ' ' + Localize.getMessage('player_quality_current') : label;
+
+        levelelement.title = `URL: ${source.url}\nMode: ${source.mode}`;
+        levelelement.appendChild(text);
+
+        levelelement.addEventListener('click', async (e) => {
+          if (source.equals(client.source)) {
+            e.stopPropagation();
+            return;
+          }
+
+          Array.from(DOMElements.videoSourceList.getElementsByClassName('source_active')).forEach((element) => {
+            element.classList.remove('source_active');
+          });
+          levelelement.classList.add('source_active');
+
+          await client.setSource(source);
+          e.stopPropagation();
         });
-      }
-    });
 
-
-    const current = videoLevels.get(currentVideoLevelID);
-    if (!current) {
-      console.warn('No current level');
-      return;
+        DOMElements.videoSourceList.appendChild(levelelement);
+      });
     }
-    let maxSize = Math.min(current.width, current.height);
+
+    // Now update the active resolution label and icons on the button
+    let maxSize = 0;
+    if (hasInternalLevels) {
+      const current = videoLevels.get(currentVideoLevelID);
+      if (current) {
+        maxSize = Math.min(current.width, current.height);
+      }
+    } else if (client.source) {
+      if (client.source.res) {
+        maxSize = parseInt(client.source.res);
+      } else if (client.source.label) {
+        maxSize = parseInt(client.source.label.replace(/p/gi, ''));
+      }
+      if (maxSize <= 0) {
+        const match = client.source.url.match(/(\d+)p/i);
+        if (match) {
+          maxSize = parseInt(match[1]);
+        }
+      }
+    }
+
     if (maxSize <= 0) {
       maxSize = Math.min(client.videoWidth, client.videoHeight);
     }

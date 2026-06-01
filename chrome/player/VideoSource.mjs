@@ -27,7 +27,7 @@ const headerBlacklist = [
 
 
 export class VideoSource {
-  constructor(source, headers, mode) {
+  constructor(source, headers, mode, label, res) {
     if (source instanceof File) {
       this.fromFile(source);
     } else {
@@ -50,6 +50,8 @@ export class VideoSource {
     this.headers = this.filterHeaders(this.headers);
     this.defaultLevelInfo = null;
     this.loadedFromArchive = false;
+    this.label = label || null;
+    this.res = res || null;
   }
 
   /**
@@ -135,7 +137,7 @@ export class VideoSource {
   }
 
   copy() {
-    const newsource = new VideoSource(this.url, {}, this.mode);
+    const newsource = new VideoSource(this.url, {}, this.mode, this.label, this.res);
     newsource.identifier = this.identifier;
     newsource.defaultLevelInfo = this.defaultLevelInfo;
     newsource.loadedFromArchive = this.loadedFromArchive;

@@ -17,6 +17,8 @@ window.addEventListener('message', (event) => {
           type: 'DETECTED_SOURCE',
           url: s.src,
           ext: 'mp4', // VideoJS direct sources are usually MP4 or direct streams
+          label: s.label,
+          res: s.label ? s.label.replace(/p/gi, '') : '',
           headers: {
             'Referer': location.href,
             'Origin': location.origin,

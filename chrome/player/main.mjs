@@ -144,7 +144,7 @@ async function recieveSources(request, sendResponse) {
   }
 
   sources.forEach((s) => {
-    window.fastStream.addSource(new VideoSource(s.url, s.headers, s.mode), s === autoSetSource);
+    window.fastStream.addSource(new VideoSource(s.url, s.headers, s.mode, s.label, s.res), s === autoSetSource);
   });
 
   if (subs) {

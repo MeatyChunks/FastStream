@@ -316,6 +316,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       url: msg.url,
       requestId: -1,
       customHeaders: headers,
+      label: msg.label,
+      res: msg.res,
     }, frame, mode);
   } else if (msg.type === MessageTypes.YT_LOADED) {
     frame.url = msg.url;
@@ -1017,9 +1019,9 @@ function getSourceFromURL(frame, url) {
   });
 }
 
-function addSource(frame, url, mode, headers) {
+function addSource(frame, url, mode, headers, label, res) {
   frame.getSources().push({
-    url, mode, headers,
+    url, mode, headers, label, res,
     time: Date.now(),
   });
 }
@@ -1218,7 +1220,7 @@ async function onSourceRecieved(details, frame, mode) {
     }
   }
 
-  addSource(frame, url, mode, customHeaders);
+  addSource(frame, url, mode, customHeaders, details.label, details.res);
   MetricsLogger.log('perf', 'source_detected', {mode, frameId: frame.frameId});
 
   const subs = await scrapeCaptionsTags(frame);
