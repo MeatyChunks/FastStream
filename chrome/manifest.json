@@ -86,7 +86,8 @@
     "tabs",
     "webRequest",
     "declarativeNetRequest",
-    "userScripts"
+    "userScripts",
+    "alarms"
   ],
   "host_permissions": [
     "<all_urls>"
