@@ -75,8 +75,7 @@
       "all_frames": true,
       "run_at": "document_start",
       "js": [
-        "content.js",
-        "custom/videojs_content.js"
+        "content.js"
       ]
     }
   ],
@@ -97,7 +96,6 @@
         "player/index.html",
         "player/options/index.html",
         "custom/instagram_inject.js",
-        "custom/videojs_inject.js",
         "temp/*"
       ],
       "matches": [
