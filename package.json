@@ -1,6 +1,6 @@
 {
   "name": "faststream",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Stream videos without buffering. Fix bad video players on the internet.",
   "scripts": {
     "test": "echo \"No tests required for browser extension\" && exit 0",
