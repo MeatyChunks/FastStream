@@ -185,19 +185,14 @@ export class PlaybackRateChanger extends EventEmitter {
     const maxIndex = Math.floor((time + this.audioPaddingStart) * outputRate);
 
     let hasData = false;
-    let dataCount = 0;
-    const totalRange = maxIndex - minIndex;
     for (let i = minIndex; i < maxIndex; i++) {
       if (volumeBuffer[i] === undefined) continue;
       hasData = true;
-      dataCount++;
       const volume = Utils.clamp((volumeBuffer[i] - minDB) / dbRange, 0, 1);
       if (volume >= this.silenceThreshold) {
         return false;
       }
     }
-    // Don't skip silence if we have insufficient audio data (< 25% coverage)
-    if (!hasData || (totalRange > 4 && dataCount < totalRange * 0.25)) return false;
     return hasData;
   }
 
