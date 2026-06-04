@@ -180,6 +180,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return;
   }
 
+  if (!sender.tab) return;
+
   const tab = Tabs.getTabOrCreate(sender.tab.id);
   const frame = tab.getFrameOrCreate(sender.frameId);
 
@@ -1408,18 +1410,20 @@ Utils.printWelcome(ExtensionVersion);
 MetricsLogger.start();
 MetricsLogger.log('event', 'startup', {version: ExtensionVersion});
 
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === 'metricsFlush') {
-    MetricsLogger.handleAlarm(alarm);
-  } else if (alarm.name === 'memorySnapshot') {
-    MetricsLogger.log('memory', 'snapshot', {tabs: Tabs.size(), playerCount: Tabs.totalPlayerCount()});
-  } else if (alarm.name === 'tabCleanup') {
-    Tabs._cleanupStaleTabs();
-  } else if (alarm.name === 'streamSaverPrune') {
-    // No-op: StreamSaverBackend registers its own alarm listener in its
-    // dedicated service worker context. This entry is kept for documentation.
-  }
-});
+if (typeof chrome !== 'undefined' && chrome.alarms) {
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === 'metricsFlush') {
+      MetricsLogger.handleAlarm(alarm);
+    } else if (alarm.name === 'memorySnapshot') {
+      MetricsLogger.log('memory', 'snapshot', {tabs: Tabs.size(), playerCount: Tabs.totalPlayerCount()});
+    } else if (alarm.name === 'tabCleanup') {
+      Tabs._cleanupStaleTabs();
+    } else if (alarm.name === 'streamSaverPrune') {
+      // No-op: StreamSaverBackend registers its own alarm listener in its
+      // dedicated service worker context. This entry is kept for documentation.
+    }
+  });
 
-chrome.alarms.create('memorySnapshot', { periodInMinutes: 1 });
-chrome.alarms.create('tabCleanup', { periodInMinutes: 2 });
+  chrome.alarms.create('memorySnapshot', { periodInMinutes: 1 });
+  chrome.alarms.create('tabCleanup', { periodInMinutes: 2 });
+}

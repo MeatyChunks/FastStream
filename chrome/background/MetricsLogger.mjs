@@ -49,7 +49,9 @@ class MetricsLogger {
   _startAutoFlush() {
     if (this._started) return;
     this._started = true;
-    chrome.alarms.create(FLUSH_ALARM_NAME, { periodInMinutes: 0.5 });
+    if (typeof chrome !== 'undefined' && chrome.alarms) {
+      chrome.alarms.create(FLUSH_ALARM_NAME, { periodInMinutes: 0.5 });
+    }
   }
 
   async _ensureCacheLoaded() {
