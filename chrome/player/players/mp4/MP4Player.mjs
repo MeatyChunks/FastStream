@@ -51,6 +51,8 @@ export default class MP4Player extends EventEmitter {
     this.currentFragments = [];
 
     this._duration = 0;
+
+    this._boundMainLoop = this.mainLoop.bind(this);
   }
 
 
@@ -316,8 +318,20 @@ export default class MP4Player extends EventEmitter {
       this.needsInit = false;
     }
 
+    // Adaptive delay: 1ms when actively loading, 50ms while download in
+    // progress, 200ms when buffer is full (only back-buffer eviction needed).
+    let delay = 1;
+    if (this.loader) {
+      delay = 50;
+    } else if (this.readyState >= 2 && this.buffered.length > 0) {
+      const ahead = this.buffered.end(this.buffered.length - 1) - this.video.currentTime;
+      if (ahead > (this.options.maxBufferLength * 0.8)) {
+        delay = 200;
+      }
+    }
+
     this.runLoad();
-    this.loopTimeout = setTimeout(this.mainLoop.bind(this), 1);
+    this.loopTimeout = setTimeout(this._boundMainLoop, delay);
   }
 
   initializeFragments() {

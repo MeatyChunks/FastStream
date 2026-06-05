@@ -3,6 +3,7 @@ import {DefaultPlayerEvents} from '../../enums/DefaultPlayerEvents.mjs';
 import {DownloadStatus} from '../../enums/DownloadStatus.mjs';
 import {PlayerModes} from '../../enums/PlayerModes.mjs';
 import {EventEmitter} from '../eventemitter.mjs';
+import {FrameBudgetScheduler} from '../../utils/FrameBudgetScheduler.mjs';
 import {EnvUtils} from '../../utils/EnvUtils.mjs';
 import {VideoAligner} from './VideoAligner.mjs';
 import {ReferenceTypes} from '../../enums/ReferenceTypes.mjs';
@@ -343,6 +344,7 @@ export class VideoAnalyzer extends EventEmitter {
 
     const onAnimFrame = () => {
       if (destroyed) {
+        if (taskId) FrameBudgetScheduler.instance.unregister(taskId);
         aligner.calculate();
         return;
       }
@@ -351,7 +353,6 @@ export class VideoAnalyzer extends EventEmitter {
         player.currentTime = Math.max(player.currentTime - 1.5, timeStart);
         console.log('[VideoAnalyzer] Resumed analyzer');
       }
-      requestAnimationFrame(onAnimFrame);
 
       clearTimeout(pauseTimeout);
       pauseTimeout = setTimeout(pauseHandler, 100);
@@ -395,7 +396,7 @@ export class VideoAnalyzer extends EventEmitter {
       this.client.interfaceController.updateMarkers();
     };
 
-    requestAnimationFrame(onAnimFrame);
+    let taskId = FrameBudgetScheduler.instance.register('video-analyzer', onAnimFrame);
   }
 
   setLevel(level, audioLevel) {

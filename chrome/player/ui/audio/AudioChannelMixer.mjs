@@ -126,8 +126,9 @@ export class AudioChannelMixer extends AbstractAudioModule {
     const height = canvas.clientHeight * window.devicePixelRatio;
     if (width === 0 || height === 0) return;
 
-    canvas.width = width;
-    canvas.height = height;
+    // Skip backing-store realloc when dimensions unchanged (avoids ~59 realloc/sec on Firefox)
+    if (canvas.width !== width) canvas.width = width;
+    if (canvas.height !== height) canvas.height = height;
 
     ctx.clearRect(0, 0, width, height);
 
@@ -203,8 +204,8 @@ export class AudioChannelMixer extends AbstractAudioModule {
     const height = canvas.clientHeight * window.devicePixelRatio;
     if (width === 0 || height === 0) return;
 
-    canvas.width = width;
-    canvas.height = height;
+    if (canvas.width !== width) canvas.width = width;
+    if (canvas.height !== height) canvas.height = height;
 
     ctx.clearRect(0, 0, width, height);
 

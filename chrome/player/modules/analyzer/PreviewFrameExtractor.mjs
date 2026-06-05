@@ -1,5 +1,7 @@
 import {DefaultPlayerEvents} from '../../enums/DefaultPlayerEvents.mjs';
 import {EventEmitter} from '../eventemitter.mjs';
+import {RangeTracker} from './RangeTracker.mjs';
+import {FrameBudgetScheduler} from '../../utils/FrameBudgetScheduler.mjs';
 
 const AnalyzerStatus = {
   IDLE: 'idle',
@@ -63,7 +65,7 @@ export class PreviewFrameExtractor extends EventEmitter {
     try {
       if (SHOULD_STORE_AS_BLOB) {
         this.frameBuffer.forEach((frame) => {
-          URL.revokeObjectURL(frame.url);
+          if (frame.url) URL.revokeObjectURL(frame.url);
         });
       }
       this.frameBuffer = [];
@@ -197,9 +199,8 @@ export class PreviewFrameExtractor extends EventEmitter {
       doneRanges = [];
     }
 
-    let currentRange = null;
-    let currentRangeIndex = 0;
-    let currentClientRange = null;
+    const rangeTracker = new RangeTracker();
+    rangeTracker.ranges = doneRanges;
     let lastOffsetCalc = Date.now();
 
     const onEnd = () => {
@@ -221,6 +222,7 @@ export class PreviewFrameExtractor extends EventEmitter {
 
     const onAnimFrame = () => {
       if (destroyed) {
+        if (taskId) FrameBudgetScheduler.instance.unregister(taskId);
         return;
       }
 
@@ -242,8 +244,6 @@ export class PreviewFrameExtractor extends EventEmitter {
       clearTimeout(pauseTimeout);
       pauseTimeout = setTimeout(pauseHandler, 100);
 
-      requestAnimationFrame(onAnimFrame);
-
       if (player.readyState < 2) {
         return;
       }
@@ -260,70 +260,25 @@ export class PreviewFrameExtractor extends EventEmitter {
 
       if (!this.frameBuffer[frame]) {
         this.extractorContext.drawImage(video, 0, 0, this.extractorCanvas.width, this.extractorCanvas.height);
-        const url = this.extractorCanvas.toDataURL('image/png');
         if (SHOULD_STORE_AS_BLOB) {
-          // convert to blob
-          const byteString = atob(url.split(',')[1]);
-          const buffer = new ArrayBuffer(byteString.length);
-          const array = new Uint8Array(buffer);
-          for (let i = 0; i < byteString.length; i++) {
-            array[i] = byteString.charCodeAt(i);
-          }
-          const blob = new Blob([buffer], {type: 'image/png'});
-          this.frameBuffer[frame] = {
-            blob,
-            url: URL.createObjectURL(blob),
-          };
+          // Mark slot pending to prevent duplicate extraction while toBlob encodes off-thread
+          this.frameBuffer[frame] = {};
+          this.extractorCanvas.toBlob((blob) => {
+            if (destroyed) return;
+            this.frameBuffer[frame] = blob
+              ? {url: URL.createObjectURL(blob)}
+              : {url: this.extractorCanvas.toDataURL('image/png')};
+          }, 'image/png');
         } else {
           this.frameBuffer[frame] = {
-            url,
+            url: this.extractorCanvas.toDataURL('image/png'),
           };
         }
       }
 
-      if (!currentRange || time < currentRange.start || time > currentRange.end + 16) {
-        currentRangeIndex = -1;
-        for (let i = 0; i < doneRanges.length; i++) {
-          if (doneRanges[i].start <= time && doneRanges[i].end >= time) {
-            currentRange = doneRanges[i];
-            currentRangeIndex = i;
-            break;
-          }
-        }
+      const currentRange = rangeTracker.update(time);
 
-        if (currentRangeIndex === -1) {
-          currentRange = {start: time, end: time};
-          // insert in order
-          currentRangeIndex = -1;
-          for (let i = 0; i < doneRanges.length; i++) {
-            if (doneRanges[i].start > time) {
-              doneRanges.splice(i, 0, currentRange);
-              currentRangeIndex = i;
-              break;
-            }
-          }
-          if (currentRangeIndex === -1) {
-            doneRanges.push(currentRange);
-            currentRangeIndex = doneRanges.length - 1;
-          }
-        }
-
-        // check if ranges need to merge (if they are close enough)
-        if (currentRangeIndex > 0 && currentRange.start - doneRanges[currentRangeIndex - 1].end < 0) {
-          doneRanges[currentRangeIndex - 1].end = Math.max(doneRanges[currentRangeIndex - 1].end, currentRange.end);
-          doneRanges.splice(currentRangeIndex, 1);
-          currentRangeIndex--;
-          currentRange = doneRanges[currentRangeIndex];
-        }
-      }
-
-      if (currentRangeIndex < doneRanges.length - 1 && doneRanges[currentRangeIndex + 1].start - currentRange.end < 0) {
-        currentRange.end = Math.max(currentRange.end, doneRanges[currentRangeIndex + 1].end);
-        doneRanges.splice(currentRangeIndex + 1, 1);
-      }
-
-
-      if (currentRange.end - currentRange.start >= player.duration - 5) {
+      if (rangeTracker.isComplete(player.duration)) {
         onEnd();
         return;
       }
@@ -338,15 +293,15 @@ export class PreviewFrameExtractor extends EventEmitter {
       }
 
       if (clientTime < currentRange.start - 5 || clientTime > currentRange.end + 5) {
-        if (!currentClientRange || Math.min(clientTime + 90, player.duration) > currentClientRange.end + 5 || clientTime + 5 < currentClientRange.start) {
+        if (!rangeTracker.currentClientRange || Math.min(clientTime + 90, player.duration) > rangeTracker.currentClientRange.end + 5 || clientTime + 5 < rangeTracker.currentClientRange.start) {
           console.log('[FrameExtractor] Client time is outside of analyzed region, seeking', clientTime, currentRange.start, currentRange.end);
           offset = this.client.isRegionBuffered(clientTimeOriginal + offsetTarget, clientTimeOriginal) ? offsetTarget : 0;
           player.currentTime = Math.floor(Math.max(clientTimeOriginal + offset, 0) / this.outputRateInv) * this.outputRateInv;
           timeSet = true;
-          currentRange = null;
+          rangeTracker.reset();
         }
       } else {
-        currentClientRange = currentRange;
+        rangeTracker.currentClientRange = currentRange;
       }
 
       if (!timeSet && !paused) {
@@ -356,7 +311,7 @@ export class PreviewFrameExtractor extends EventEmitter {
       this.client.interfaceController.updateMarkers();
     };
 
-    requestAnimationFrame(onAnimFrame);
+    let taskId = FrameBudgetScheduler.instance.register('frame-extractor', onAnimFrame);
 
     return doneRanges;
   }

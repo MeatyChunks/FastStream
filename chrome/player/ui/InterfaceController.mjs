@@ -6,6 +6,7 @@ import {ClickActions} from '../options/defaults/ClickActions.mjs';
 import {MiniplayerPositions} from '../options/defaults/MiniplayerPositions.mjs';
 import {VisChangeActions} from '../options/defaults/VisChangeActions.mjs';
 import {EnvUtils} from '../utils/EnvUtils.mjs';
+import {FrameBudgetScheduler} from '../utils/FrameBudgetScheduler.mjs';
 import {InterfaceUtils} from '../utils/InterfaceUtils.mjs';
 import {StringUtils} from '../utils/StringUtils.mjs';
 import {URLUtils} from '../utils/URLUtils.mjs';
@@ -48,7 +49,6 @@ export class InterfaceController {
     this._boundOnControlsMouseEnter = this.onControlsMouseEnter.bind(this);
     this._boundOnControlsMouseLeave = this.onControlsMouseLeave.bind(this);
     this._boundSkipSegment = this.skipSegment.bind(this);
-    this._boundProgressLoop = this.progressLoop.bind(this);
 
     this.toolManager = new ToolManager(this.client, this);
 
@@ -957,7 +957,7 @@ export class InterfaceController {
   }
 
   destroy() {
-    this.shouldRunProgressLoop = false;
+    this.stopProgressLoop();
     this._boundListeners.forEach(({ element, event, handler, options }) => {
       element.removeEventListener(event, handler, options);
     });
@@ -967,15 +967,6 @@ export class InterfaceController {
       this._intersectionObserver = null;
     }
     this.saveManager.destroy();
-  }
-
-  progressLoop() {
-    if (!this.shouldRunProgressLoop) {
-      this.isRunningProgressLoop = false;
-      return;
-    }
-    window.requestAnimationFrame(this._boundProgressLoop);
-    this.client.updateTime(this.client.currentTime);
   }
 
   durationChanged() {
@@ -992,12 +983,27 @@ export class InterfaceController {
     if (!this.isRunningProgressLoop) {
       this.isRunningProgressLoop = true;
       this.shouldRunProgressLoop = true;
-      this.progressLoop();
+      this._progressTaskId = FrameBudgetScheduler.instance.register('progress-loop', () => {
+        if (!this.shouldRunProgressLoop) {
+          this.isRunningProgressLoop = false;
+          if (this._progressTaskId) {
+            FrameBudgetScheduler.instance.unregister(this._progressTaskId);
+            this._progressTaskId = null;
+          }
+          return;
+        }
+        this.client.updateTime(this.client.currentTime);
+      });
     }
   }
 
   stopProgressLoop() {
     this.shouldRunProgressLoop = false;
+    if (this._progressTaskId) {
+      FrameBudgetScheduler.instance.unregister(this._progressTaskId);
+      this._progressTaskId = null;
+      this.isRunningProgressLoop = false;
+    }
   }
 
   skipSegment() {
