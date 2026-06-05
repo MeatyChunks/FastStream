@@ -3,3 +3,5 @@ web-ext-artifacts
 node_modules
 built
 output/
+.claude/
+.serena/
