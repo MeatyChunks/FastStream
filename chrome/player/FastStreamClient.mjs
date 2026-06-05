@@ -764,7 +764,8 @@ export class FastStreamClient extends EventEmitter {
   }
 
   initiateWebAudio() {
-    const ctx = this.audioContextManager.getContext();
+    const ctx = this.audioContextManager?.getContext();
+    if (!ctx) return;
     this.audioSource = ctx.createMediaElementSource(this.player.getVideo());
 
     this.audioOutputNode = new VirtualAudioNode('mainSource');
@@ -860,10 +861,12 @@ export class FastStreamClient extends EventEmitter {
         this.initiateWebAudio();
       }
 
-      this.syncedAudioPlayer = new SyncedAudioPlayer(this);
-      this.syncedAudioPlayer.setPlaybackRate(this.state.playbackRate);
-      await this.syncedAudioPlayer.setup(this.audioContext, this.audioSource, this.audioOutputNode);
-      this.syncedAudioPlayer.setVideoDelay(this.options.videoDelay);
+      if (this.audioContext && this.audioSource) {
+        this.syncedAudioPlayer = new SyncedAudioPlayer(this);
+        this.syncedAudioPlayer.setPlaybackRate(this.state.playbackRate);
+        await this.syncedAudioPlayer.setup(this.audioContext, this.audioSource, this.audioOutputNode);
+        this.syncedAudioPlayer.setVideoDelay(this.options.videoDelay);
+      }
 
       this.setVolume(this.state.volume);
 
