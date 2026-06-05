@@ -1,5 +1,6 @@
 import {PlayerModes} from '../player/enums/PlayerModes.mjs';
 import {EnvUtils} from '../player/utils/EnvUtils.mjs';
+import {BrowserAdapter} from '../player/utils/BrowserAdapter.mjs';
 import {StringUtils} from '../player/utils/StringUtils.mjs';
 import {URLUtils} from '../player/utils/URLUtils.mjs';
 import {Utils} from '../player/utils/Utils.mjs';
@@ -1278,7 +1279,7 @@ async function openPlayersWithSources(tab) {
 const webRequestPerms = ['requestHeaders'];
 const webRequestPerms2 = [];
 
-if (EnvUtils.isChrome()) {
+if (BrowserAdapter.supportsExtraHeaders) {
   webRequestPerms.push('extraHeaders');
   webRequestPerms2.push('extraHeaders');
 }
@@ -1394,7 +1395,7 @@ try {
 
 }
 
-if (EnvUtils.isChrome()) {
+if (chrome.action?.setBadgeBackgroundColor) {
   chrome.action.setBadgeBackgroundColor(
       {
         color: [56, 114, 223, 255],

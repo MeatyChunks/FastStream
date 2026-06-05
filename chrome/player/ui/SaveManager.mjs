@@ -131,7 +131,7 @@ export class SaveManager {
     let url;
     let filestream;
     let name;
-    if (canStream || EnvUtils.isChrome() || true) {
+    {
       name = shouldAskForName ? await AlertPolyfill.prompt(Localize.getMessage('player_filename_prompt'), suggestedName) : suggestedName;
       if (!name) {
         return;

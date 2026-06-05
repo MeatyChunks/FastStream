@@ -1,5 +1,5 @@
 import {EventEmitter} from '../../modules/eventemitter.mjs';
-import {EnvUtils} from '../../utils/EnvUtils.mjs';
+import {BrowserAdapter} from '../../utils/BrowserAdapter.mjs';
 
 export class SourceBufferWrapper extends EventEmitter {
   constructor(mediaSource, codec, getCurrentTime = null) {
@@ -56,52 +56,18 @@ export class SourceBufferWrapper extends EventEmitter {
 
       if (current.type === 'append') {
         try {
-          if (EnvUtils.isFirefox()) {
-            try {
-              const buffered = this.sourceBuffer.buffered;
-              if (buffered.length > 0) {
-                const firstStart = buffered.start(0);
-                const lastEnd = buffered.end(buffered.length - 1);
-                
-                // Try past-eviction relative to current playhead first
-                if (this.getCurrentTime) {
-                  const playhead = this.getCurrentTime();
-                  if (playhead - firstStart > 15) {
-                    const removeEnd = playhead - 10;
-                    if (removeEnd > firstStart) {
-                      this.sourceBuffer.remove(firstStart, removeEnd);
-                      this.updating = true;
-                      return;
-                    }
-                  }
-                }
-
-                // Fallback to absolute span eviction if buffer span exceeds 60 seconds
-                if (lastEnd - firstStart > 60) {
-                  const removeEnd = lastEnd - 30;
-                  if (removeEnd > firstStart) {
-                    this.sourceBuffer.remove(firstStart, removeEnd);
-                    this.updating = true;
-                    // Re-queue the append to run after eviction finishes
-                    return;
-                  }
-                }
-              }
-            } catch (_) {}
+          if (BrowserAdapter.needsBufferEviction) {
+            if (BrowserAdapter.evictBeforeAppend(this.sourceBuffer, this.getCurrentTime)) {
+              this.updating = true;
+              return;
+            }
           }
           this.sourceBuffer.appendBuffer(current.buffer);
           this.updating = true;
           current.resolve();
         } catch (e) {
-          if (e.name === 'QuotaExceededError') {
-            // Firefox throws QuotaExceededError earlier than Chrome due to stricter
-            // SourceBuffer memory limits. Evict oldest buffer to recover.
-            try {
-              const buffered = this.sourceBuffer.buffered;
-              if (buffered.length > 0 && buffered.end(0) > 30) {
-                this.sourceBuffer.remove(0, buffered.end(0) - 30);
-              }
-            } catch (_) { /* ignore */ }
+          if (e.name === 'QuotaExceededError' && BrowserAdapter.needsBufferEviction) {
+            BrowserAdapter.handleQuotaExceeded(this.sourceBuffer);
           }
           current.reject(e);
           // Synchronous throw: updateend won't fire, skip setting updating

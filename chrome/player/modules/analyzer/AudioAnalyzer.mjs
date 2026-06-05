@@ -1,5 +1,6 @@
 import {DefaultPlayerEvents} from '../../enums/DefaultPlayerEvents.mjs';
 import {EnvUtils} from '../../utils/EnvUtils.mjs';
+import {BrowserAdapter} from '../../utils/BrowserAdapter.mjs';
 import {EventEmitter} from '../eventemitter.mjs';
 import {AudioAnalyzerNode} from './AudioAnalyzerNode.mjs';
 
@@ -268,7 +269,7 @@ export class AudioAnalyzer extends EventEmitter {
     const time = this.client.currentTime;
     let offset = this.client.isRegionBuffered(time + offsetTarget, time) ? offsetTarget : 0;
     player.currentTime = Math.max(time + offset, 0);
-    player.playbackRate = EnvUtils.isChrome() ? 16 : 8; // Firefox mutes audio at high playback rates
+    player.playbackRate = BrowserAdapter.maxPlaybackRate;
     player.loop = true;
     player.play();
 

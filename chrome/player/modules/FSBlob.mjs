@@ -1,9 +1,10 @@
 import {IndexedDBManager} from '../network/IndexedDBManager.mjs';
 import {AlertPolyfill} from '../utils/AlertPolyfill.mjs';
 import {EnvUtils} from '../utils/EnvUtils.mjs';
+import {BrowserAdapter} from '../utils/BrowserAdapter.mjs';
 import {Localize} from './Localize.mjs';
 
-const BrowserCanAutoOffloadBlobs = EnvUtils.isChrome();
+const BrowserCanAutoOffloadBlobs = BrowserAdapter.canOffloadBlobs;
 const UseCache = !BrowserCanAutoOffloadBlobs && window.caches;
 const UseIndexedDB = !BrowserCanAutoOffloadBlobs && !UseCache && IndexedDBManager.isSupported();
 
@@ -57,7 +58,7 @@ export class FSBlob {
     // Get file
     const file = await this.indexedDBManager.getFile(identifier);
 
-    if (EnvUtils.isFirefox()) {
+    if (BrowserAdapter.needsIDBBlobOrphaning) {
       // Firefox IndexedDB retains blob references differently than Chrome.
       // Orphan the entry (delete from IDB but keep the JS reference) to avoid
       // quota accumulation while preserving the blob for playback.

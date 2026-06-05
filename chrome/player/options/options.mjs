@@ -1,5 +1,6 @@
 import {DefaultKeybinds} from './defaults/DefaultKeybinds.mjs';
 import {EnvUtils} from '../utils/EnvUtils.mjs';
+import {BrowserAdapter} from '../utils/BrowserAdapter.mjs';
 import {StringUtils} from '../utils/StringUtils.mjs';
 import {Utils} from '../utils/Utils.mjs';
 import {WebUtils} from '../utils/WebUtils.mjs';
@@ -566,11 +567,7 @@ if (EnvUtils.isExtension()) {
 
     let url;
 
-    if (EnvUtils.isChrome()) {
-      url = 'https://chromewebstore.google.com/u/1/detail/faststream-video-player/kkeakohpadmbldjaiggikmnldlfkdfog/reviews';
-    } else {
-      url = 'https://addons.mozilla.org/en-US/firefox/addon/faststream/reviews/';
-    }
+    url = BrowserAdapter.storeReviewURL;
 
     chrome?.tabs?.create({
       url,

@@ -11,6 +11,8 @@ import {PlayerLoader} from './players/PlayerLoader.mjs';
 import {DOMElements} from './ui/DOMElements.mjs';
 import {AudioConfigManager} from './ui/audio/AudioConfigManager.mjs';
 import {EnvUtils} from './utils/EnvUtils.mjs';
+import {BrowserAdapter} from './utils/BrowserAdapter.mjs';
+import {AudioContextManager} from './audio/AudioContextManager.mjs';
 import {Localize} from './modules/Localize.mjs';
 import {ClickActions} from './options/defaults/ClickActions.mjs';
 import {VisChangeActions} from './options/defaults/VisChangeActions.mjs';
@@ -89,7 +91,7 @@ export class FastStreamClient extends EventEmitter {
       videoRotate: 0,
       disableVisualFilters: false,
       maximumDownloaders: 6,
-      maxPlaybackRate: EnvUtils.isChrome() ? 16 : 8,
+      maxPlaybackRate: BrowserAdapter.maxPlaybackRate,
       youtubePlayerID: '',
     };
     this.state = {
@@ -124,8 +126,8 @@ export class FastStreamClient extends EventEmitter {
     this.frameExtractor = new PreviewFrameExtractor(this);
     if (EnvUtils.isWebAudioSupported()) {
       this.audioConfigManager = new AudioConfigManager(this);
-      this.audioContext = new AudioContext();
-      this.audioConfigManager.setupNodes(this.audioContext);
+      this.audioContextManager = new AudioContextManager();
+      this.audioConfigManager.setupNodes(this.audioContextManager.getContext());
     }
 
     this.videoAnalyzer.on(AnalyzerEvents.MATCH, () => {
@@ -318,7 +320,7 @@ export class FastStreamClient extends EventEmitter {
       fragmentCount,
       fragmentLevels,
       downloadQueueLength: this.downloadManager?.storage?.size || 0,
-      audioContextActive: !!this.audioContext,
+      audioContextActive: !!this.audioContextManager,
       syncedAudioPlayers: this.syncedAudioPlayer?.audioPlayers?.length || 0,
       playerActive: !!this.player,
       destroyed: this.destroyed,
@@ -762,18 +764,18 @@ export class FastStreamClient extends EventEmitter {
   }
 
   initiateWebAudio() {
-    this.audioContext = new AudioContext();
-    this.audioSource = this.audioContext.createMediaElementSource(this.player.getVideo());
+    const ctx = this.audioContextManager.getContext();
+    this.audioSource = ctx.createMediaElementSource(this.player.getVideo());
 
     this.audioOutputNode = new VirtualAudioNode('mainSource');
     this.audioOutputNode.connectFrom(this.audioSource);
 
-    this.audioAnalyzer.setupAnalyzerNodeForMainPlayer(this.player.getVideo(), this.audioOutputNode, this.audioContext, ()=>{
+    this.audioAnalyzer.setupAnalyzerNodeForMainPlayer(this.player.getVideo(), this.audioOutputNode, ctx, ()=>{
       return this.currentVideo.currentTime + this.options.videoDelay / 1000;
     });
-    this.audioConfigManager.setupNodes(this.audioContext);
+    this.audioConfigManager.setupNodes(ctx);
     this.audioConfigManager.getInputNode().connectFrom(this.audioOutputNode);
-    this.audioConfigManager.getOutputNode().connect(this.audioContext.destination);
+    this.audioConfigManager.getOutputNode().connect(ctx.destination);
   }
 
   /**
@@ -1333,9 +1335,8 @@ export class FastStreamClient extends EventEmitter {
       this.syncedAudioPlayer = null;
     }
 
-    if (this.audioContext) {
-      this.audioContext.close().catch(()=>{});
-      this.audioContext = null;
+    if (this.audioContextManager) {
+      this.audioContextManager.close();
     }
 
     if (this.audioSource) {
@@ -1447,16 +1448,16 @@ export class FastStreamClient extends EventEmitter {
 
     this.context.on(DefaultPlayerEvents.PAUSE, (event) => {
       this.interfaceController.pause();
-      if (this.audioContext && this.audioContext.state === 'running') {
-        this.audioContext.suspend().catch(() => {});
+      if (this.audioContextManager) {
+        this.audioContextManager.suspend('pause');
       }
     });
 
 
     this.context.on(DefaultPlayerEvents.PLAY, (event) => {
       this.interfaceController.play();
-      if (this.audioContext && this.audioContext.state === 'suspended') {
-        this.audioContext.resume().catch(() => {});
+      if (this.audioContextManager) {
+        this.audioContextManager.resume('pause');
       }
     });
 
@@ -1588,8 +1589,8 @@ export class FastStreamClient extends EventEmitter {
 
     this.interfaceController.play();
 
-    if (this.audioContext && this.audioContext.state === 'suspended') {
-      await this.audioContext.resume();
+    if (this.audioContextManager && this.audioContextManager.isSuspended) {
+      await this.audioContextManager.resume('pause');
     }
     this.audioAnalyzer.updateBackgroundAnalyzer();
   }
@@ -1687,6 +1688,14 @@ export class FastStreamClient extends EventEmitter {
    * Gets the duration of the video.
    * @return {number}
    */
+  /**
+   * Backward-compatible access to the AudioContext.
+   * Delegates to AudioContextManager for lifecycle control.
+   */
+  get audioContext() {
+    return this.audioContextManager?.getContext() || null;
+  }
+
   get duration() {
     return this.player?.duration || 0;
   }

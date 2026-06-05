@@ -1,5 +1,6 @@
 import {EventEmitter} from '../../modules/eventemitter.mjs';
 import {EnvUtils} from '../../utils/EnvUtils.mjs';
+import {BrowserAdapter} from '../../utils/BrowserAdapter.mjs';
 import {Utils} from '../../utils/Utils.mjs';
 import {WebUtils} from '../../utils/WebUtils.mjs';
 import {DOMElements} from '../DOMElements.mjs';
@@ -143,24 +144,14 @@ export class PlaybackRateChanger extends EventEmitter {
 
     // Throttle when tab is hidden — no point adjusting playback rate
     if (document.hidden) {
-      if (this.client.audioAnalyzer && this.client.audioAnalyzer.audioContext) {
-        try {
-          const ctx = this.client.audioAnalyzer.audioContext;
-          if (ctx.state === 'running') {
-            ctx.suspend();
-          }
-        } catch (_) {}
+      if (this.client.audioContextManager) {
+        this.client.audioContextManager.suspend('hidden');
       }
       setTimeout(this.silenceSkipperLoopHandle, 5000);
       return;
     } else {
-      if (this.client.audioAnalyzer && this.client.audioAnalyzer.audioContext) {
-        try {
-          const ctx = this.client.audioAnalyzer.audioContext;
-          if (ctx.state === 'suspended') {
-            ctx.resume();
-          }
-        } catch (_) {}
+      if (this.client.audioContextManager) {
+        this.client.audioContextManager.resume('hidden');
       }
     }
 
@@ -175,7 +166,7 @@ export class PlaybackRateChanger extends EventEmitter {
     if (this.shouldSkipSilence(time)) {
       if (playbackRate !== this.silenceSkipSpeed) {
         // Fix for chrome desync bug
-        if (EnvUtils.isChrome()) {
+        if (BrowserAdapter.needsDesyncFix) {
           this.resyncCounter++;
           if (this.resyncCounter > 4) {
             this.resyncCounter = 0;

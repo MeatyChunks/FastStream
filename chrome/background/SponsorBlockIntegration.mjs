@@ -1,6 +1,6 @@
-import {EnvUtils} from '../player/utils/EnvUtils.mjs';
+import {BrowserAdapter} from '../player/utils/BrowserAdapter.mjs';
 
-const SponsorBlockID = EnvUtils.isChrome() ? 'mnjggcdmjocbbbhaepdhchncahnbgone' : 'sponsorBlocker@ajay.app';
+const SponsorBlockID = BrowserAdapter.sponsorBlockID;
 
 export class SponsorBlockIntegration {
   constructor() {
