@@ -29,6 +29,16 @@ Notes:
 - **We take accessibility concerns seriously**. If you need accommodations not available in the latest version, please contact us and we will work on it ASAP. Also, please feel free to submit feature requests or suggestions on the Github issue tracker!
 - The default maximum size for pre-buffering is 5GB. This can be changed in the settings page. Please be mindful of your computer's storage space when changing this setting. Browsers will offload data in the RAM to the SSD if the video is too large. Frequently pre-buffering large videos can reduce the lifespan of your SSD.
 
+## What's New (Fork)
+
+This is the MeatyChunks fork of [FastStream](https://github.com/Andrews54757/FastStream). Recent changes:
+
+- **Fixed: video stuck at 2× speed.** A silence-skipper feature could leave playback racing at double speed after tab switches or buffering. It has been removed; playback rate is now stable.
+- **Firefox performance & stability.** Fixed memory leaks: orphaned player iframes left running after SPA navigation, unbounded download cache growth, leaked DOM event listeners across navigations, and unclosed AudioContexts on teardown.
+- **Lower CPU.** Background video-frame analysis is throttled to 3 fps, eliminating heavy canvas operations during scanning.
+- **Subtitle editing.** Drag, resize, create, and delete subtitle cues directly on the timeline (re-synced from upstream).
+- **Hardening.** Stricter validation on internal browser-extension messages.
+
 ## Demo
 
 See the player in action without installing the extension! Tested on Chrome and Firefox. Note: Some features (OpenSubtitles/header override) are not available without installation.
