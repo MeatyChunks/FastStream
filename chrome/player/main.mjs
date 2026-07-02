@@ -56,12 +56,6 @@ if (EnvUtils.isExtension()) {
 
         sendResponse('ok');
       });
-
-  setInterval(() => {
-    chrome.runtime.sendMessage({
-      type: MessageTypes.PING,
-    });
-  }, 10000);
 }
 
 async function recieveSources(request, sendResponse) {
