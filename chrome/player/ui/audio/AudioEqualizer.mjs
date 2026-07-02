@@ -358,6 +358,12 @@ export class AudioEqualizer extends AbstractAudioModule {
       this.ui.equalizerNodes.appendChild(el);
 
       let isDragging = false;
+      // Cached bounding rect for the equalizerNodes container. Populated on
+      // mousedown (single read per drag) and invalidated on mouseup + window
+      // resize. Avoids two getBoundingClientRect() calls per mousemove.
+      let cachedRect = null;
+      const invalidateRect = () => { cachedRect = null; };
+      window.addEventListener('resize', invalidateRect);
 
       const updateTooltip = (x, y) => {
         if (y < 40) {
@@ -383,8 +389,9 @@ export class AudioEqualizer extends AbstractAudioModule {
 
       const mouseMove = (e) => {
         if (!isDragging) return;
-        const x = e.clientX - this.ui.equalizerNodes.getBoundingClientRect().left;
-        const y = e.clientY - this.ui.equalizerNodes.getBoundingClientRect().top;
+        if (!cachedRect) cachedRect = this.ui.equalizerNodes.getBoundingClientRect();
+        const x = e.clientX - cachedRect.left;
+        const y = e.clientY - cachedRect.top;
 
         const newXPercent = Utils.clamp(x / this.ui.equalizerNodes.clientWidth * 100, 0, 100);
         const newYPercent = Utils.clamp(y / this.ui.equalizerNodes.clientHeight * 100, 0, 100);
@@ -411,6 +418,7 @@ export class AudioEqualizer extends AbstractAudioModule {
 
       const mouseUp = (e) => {
         isDragging = false;
+        cachedRect = null;
 
         DOMElements.playerContainer.removeEventListener('mousemove', mouseMove);
         DOMElements.playerContainer.removeEventListener('mouseup', mouseUp);
@@ -420,6 +428,7 @@ export class AudioEqualizer extends AbstractAudioModule {
         if (isDragging) return;
         isDragging = true;
         e.stopPropagation();
+        cachedRect = this.ui.equalizerNodes.getBoundingClientRect();
         DOMElements.playerContainer.addEventListener('mousemove', mouseMove);
         DOMElements.playerContainer.addEventListener('mouseup', mouseUp);
       });

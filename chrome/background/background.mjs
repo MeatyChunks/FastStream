@@ -157,11 +157,21 @@ chrome.tabs.onUpdated.addListener((tabid, changeInfo, tabobj) => {
   BackgroundUtils.updateTabIcon(tab, true);
 });
 
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type === MessageTypes.PING) {
+// --- Message dispatch tables ----------------------------------------------
+// Two tables: PRE_GUARD_HANDLERS run before the `if (!sender.tab) return;`
+// guard (PING / LOAD_OPTIONS don't need a sending tab); POST_GUARD_HANDLERS
+// run after tab/frame setup. Each handler returns true to keep the
+// sendResponse channel open for async work, or undefined to close it
+// synchronously. Fall-through handlers explicitly call sendResponse('ok')
+// to preserve the original implicit `sendResponse('ok')` at the end of the
+// legacy if/else chain.
+
+const PRE_GUARD_HANDLERS = {
+  [MessageTypes.PING]: (msg, sender, sendResponse) => {
     sendResponse(MessageTypes.PONG);
     return;
-  } else if (msg.type === MessageTypes.LOAD_OPTIONS) {
+  },
+  [MessageTypes.LOAD_OPTIONS]: (msg, sender, sendResponse) => {
     loadOptions();
     // sent to all tabs
     BackgroundUtils.queryTabs().then((tabs) => {
@@ -177,14 +187,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       });
     });
     return;
-  }
+  },
+};
 
-  if (!sender.tab) return;
-
-  const tab = Tabs.getTabOrCreate(sender.tab.id);
-  const frame = tab.getFrameOrCreate(sender.frameId);
-
-  if (msg.type === MessageTypes.PLAYER_LOADED) {
+const POST_GUARD_HANDLERS = {
+  [MessageTypes.PLAYER_LOADED]: (msg, sender, sendResponse, tab, frame) => {
     if (Logging) console.log('Found FastStream window', frame);
     frame.isPlayer = true;
 
@@ -236,7 +243,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse(response);
     });
     return true;
-  } else if (msg.type === MessageTypes.FRAME_ADDED) {
+  },
+
+  [MessageTypes.FRAME_ADDED]: (msg, sender, sendResponse, tab, frame) => {
     // Preserve sources key to this frame's new URL
     // This is needed because resetSelfAndChildren clears all sources, but we might have
     // already detected a source for this frame via onHeadersReceived (e.g. Vimeo)
@@ -262,7 +271,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
     });
     frame.loadedCallbacks.clear();
-  } else if (msg.type === MessageTypes.FRAME_REMOVED) {
+
+    sendResponse('ok');
+    return;
+  },
+
+  [MessageTypes.FRAME_REMOVED]: (msg, sender, sendResponse, tab, frame) => {
     const toRemove = msg.frameId !== undefined ? tab.getFrame(msg.frameId) : frame;
     const playerCount = toRemove.resetSelfAndChildren();
     tab.playerCount -= playerCount;
@@ -273,7 +287,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 
     tab.removeFrame(toRemove.frameId);
-  } else if (msg.type === MessageTypes.WAIT_UNTIL_MAIN_LOADED) {
+
+    sendResponse('ok');
+    return;
+  },
+
+  [MessageTypes.WAIT_UNTIL_MAIN_LOADED]: (msg, sender, sendResponse, tab, frame) => {
     frame.loadedCallbacks.add(sendResponse);
 
     // Try to ping tab
@@ -289,7 +308,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
     });
     return true;
-  } else if (msg.type === MessageTypes.SEND_TO_CONTENT) {
+  },
+
+  [MessageTypes.SEND_TO_CONTENT]: (msg, sender, sendResponse, tab, frame) => {
     chrome.tabs.sendMessage(tab.tabId, {
       type: MessageTypes.MESSAGE_FROM_CONTENT,
       data: msg.data,
@@ -299,9 +320,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }, (response) => {
       BackgroundUtils.checkMessageError('message_from_content');
     });
-  } else if (msg.type === MessageTypes.REQUEST_SOURCES) {
+    sendResponse('ok');
+    return;
+  },
+
+  [MessageTypes.REQUEST_SOURCES]: (msg, sender, sendResponse, tab, frame) => {
     sendSources(frame);
-  } else if (msg.type === MessageTypes.SET_HEADERS) {
+    sendResponse('ok');
+    return;
+  },
+
+  [MessageTypes.SET_HEADERS]: (msg, sender, sendResponse, tab, frame) => {
     if (msg.commands.length) {
       ruleManager.addHeaderRule(msg.url, sender.tab.id, msg.commands).then((rule) => {
         if (Logging) console.log('Added rule', msg, rule);
@@ -309,7 +338,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       });
       return true;
     }
-  } else if (msg.type === MessageTypes.DETECTED_SOURCE) {
+    sendResponse('ok');
+    return;
+  },
+
+  [MessageTypes.DETECTED_SOURCE]: (msg, sender, sendResponse, tab, frame) => {
     const mode = URLUtils.getModeFromExtension(msg.ext);
     const headers = msg.headers || {};
     onSourceRecieved({
@@ -317,10 +350,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       requestId: -1,
       customHeaders: headers,
     }, frame, mode);
-  } else if (msg.type === MessageTypes.YT_LOADED) {
+    sendResponse('ok');
+    return;
+  },
+
+  [MessageTypes.YT_LOADED]: (msg, sender, sendResponse, tab, frame) => {
     frame.url = msg.url;
     checkYTURL(frame);
-  } else if (msg.type === MessageTypes.DOWNLOAD) {
+    sendResponse('ok');
+    return;
+  },
+
+  [MessageTypes.DOWNLOAD]: (msg, sender, sendResponse, tab, frame) => {
     const url = msg.url;
     const filename = msg.filename;
     // Check if cookieStoreId is set
@@ -352,10 +393,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       });
     }
     return true;
-  } else if (msg.type === MessageTypes.STORE_ANALYZER_DATA) {
+  },
+
+  [MessageTypes.STORE_ANALYZER_DATA]: (msg, sender, sendResponse, tab, frame) => {
     if (Logging) console.log('Analyzer data', msg.data);
     tab.analyzerData = msg.data;
-  } else if (msg.type === MessageTypes.SEND_TO_PLAYER) {
+    sendResponse('ok');
+    return;
+  },
+
+  [MessageTypes.SEND_TO_PLAYER]: (msg, sender, sendResponse, tab, frame) => {
     const pframe = tab.getFrame(msg.frameId);
     if (!pframe || !pframe.isPlayer) {
       sendResponse(null);
@@ -373,7 +420,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse(response);
     });
     return true;
-  } else if (msg.type === MessageTypes.ENSURE_YT_USERSCRIPT) {
+  },
+
+  [MessageTypes.ENSURE_YT_USERSCRIPT]: (msg, sender, sendResponse, tab, frame) => {
     if (!BackgroundUtils.isUserScriptsAvailable()) {
       sendResponse({
         success: false,
@@ -393,13 +442,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       });
     });
     return true;
-  } else if (msg.type === MessageTypes.REQUEST_FULLSCREEN) {
+  },
+
+  [MessageTypes.REQUEST_FULLSCREEN]: (msg, sender, sendResponse, tab, frame) => {
     return handleFullscreenRequest(frame, msg, sendResponse);
-  } else if (msg.type === MessageTypes.REQUEST_WINDOWED_FULLSCREEN) {
+  },
+
+  [MessageTypes.REQUEST_WINDOWED_FULLSCREEN]: (msg, sender, sendResponse, tab, frame) => {
     return handleWindowedFullscreenRequest(frame, msg, sendResponse);
-  } else if (msg.type === MessageTypes.REQUEST_MINIPLAYER) {
+  },
+
+  [MessageTypes.REQUEST_MINIPLAYER]: (msg, sender, sendResponse, tab, frame) => {
     return handleMiniplayerRequest(frame, msg, sendResponse);
-  } else if (msg.type === MessageTypes.REQUEST_PLAYLIST_NAVIGATION) {
+  },
+
+  [MessageTypes.REQUEST_PLAYLIST_NAVIGATION]: (msg, sender, sendResponse, tab, frame) => {
     const pageFrame = frame.pageFrame;
     if (!pageFrame) {
       sendResponse('error');
@@ -419,7 +476,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse(response);
     });
     return true;
-  } else if (msg.type === MessageTypes.REQUEST_PLAYLIST_POLL) {
+  },
+
+  [MessageTypes.REQUEST_PLAYLIST_POLL]: (msg, sender, sendResponse, tab, frame) => {
     const pageFrame = frame.pageFrame;
     if (!pageFrame || frame.frameId === 0) {
       sendResponse('error');
@@ -435,7 +494,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse(response);
     });
     return true;
-  } else if (msg.type === MessageTypes.REQUEST_SPONSORBLOCK) {
+  },
+
+  [MessageTypes.REQUEST_SPONSORBLOCK]: (msg, sender, sendResponse, tab, frame) => {
     if (msg.action === 'getSkipSegments' && frame.frameId !== 0) {
       // send message to parent frame
       chrome.tabs.sendMessage(frame.tab.tabId, {
@@ -455,7 +516,9 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 
     return sponsorBlockBackend.onPlayerMessage(msg, sendResponse);
-  } else if (msg.type === MessageTypes.REQUEST_YT_DATA) {
+  },
+
+  [MessageTypes.REQUEST_YT_DATA]: (msg, sender, sendResponse, tab, frame) => {
     const pageFrame = frame.pageFrame;
     if (!pageFrame) {
       sendResponse('error');
@@ -471,11 +534,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse(response);
     });
     return true;
-  } else {
-    return;
-  }
+  },
+};
 
-  sendResponse('ok');
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  const preHandler = PRE_GUARD_HANDLERS[msg.type];
+  if (preHandler) return preHandler(msg, sender, sendResponse);
+
+  if (!sender.tab) return;
+
+  const tab = Tabs.getTabOrCreate(sender.tab.id);
+  const frame = tab.getFrameOrCreate(sender.frameId);
+
+  const handler = POST_GUARD_HANDLERS[msg.type];
+  if (handler) return handler(msg, sender, sendResponse, tab, frame);
 });
 
 async function cascadedFullscreen(playerFrame, finalFrame, data) {
