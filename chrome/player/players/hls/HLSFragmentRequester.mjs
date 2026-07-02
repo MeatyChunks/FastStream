@@ -1,10 +1,10 @@
 import {DefaultPlayerEvents} from '../../enums/DefaultPlayerEvents.mjs';
-import {DownloadStatus} from '../../enums/DownloadStatus.mjs';
+import BaseFragmentRequester from '../BaseFragmentRequester.mjs';
 import {HLSDecrypter} from './HLSDecrypter.mjs';
 
-export class HLSFragmentRequester {
+export class HLSFragmentRequester extends BaseFragmentRequester {
   constructor(player) {
-    this.player = player;
+    super(player);
     this.decrypter = new HLSDecrypter();
   }
 
@@ -12,15 +12,8 @@ export class HLSFragmentRequester {
     this.decrypter.destroy();
   }
 
-  requestFragment(fragment, callbacks, config, priority) {
+  _getDownloadConfig(fragment, config) {
     const context = fragment.getContext();
-    config = config || {};
-
-    if (fragment.status === DownloadStatus.WAITING) {
-      fragment.status = DownloadStatus.DOWNLOAD_INITIATED;
-      this.player.emit(DefaultPlayerEvents.FRAGMENT_UPDATE, fragment);
-    }
-
     const frag = fragment.getFrag();
 
     if (frag.decryptdata) {
@@ -57,7 +50,7 @@ export class HLSFragmentRequester {
       });
     }
 
-    const loader = this.player.getClient().downloadManager.getFile({
+    return {
       ...context,
       config,
       headers: {
@@ -82,45 +75,13 @@ export class HLSFragmentRequester {
 
         return response;
       },
-    }, {
-      onSuccess: async (entry, xhr) => {
-        let data;
-        try {
-          if (!callbacks.skipProcess) {
-            data = await entry.getDataFromBlob();
-          }
-          fragment.dataSize = entry.dataSize;
-        } catch (e) {
-          console.error(e);
-          fragment.status = DownloadStatus.DOWNLOAD_FAILED;
-          this.player.emit(DefaultPlayerEvents.FRAGMENT_UPDATE, fragment);
-          callbacks.onFail(entry);
-          return;
-        }
-        if (fragment.status !== DownloadStatus.DOWNLOAD_COMPLETE) {
-          fragment.status = DownloadStatus.DOWNLOAD_COMPLETE;
-          this.player.emit(DefaultPlayerEvents.FRAGMENT_UPDATE, fragment);
-        }
-        callbacks.onSuccess({
-          url: entry.url,
-          data: data,
-        }, entry.stats, context, null);
-      },
-      onProgress: (stats, context2, data, xhr) => {
-        if (callbacks.onProgress) callbacks.onProgress(stats, context, data, xhr);
-      },
-      onFail: (entry) => {
-        fragment.status = DownloadStatus.DOWNLOAD_FAILED;
-        this.player.emit(DefaultPlayerEvents.FRAGMENT_UPDATE, fragment);
-        callbacks.onFail(entry);
-      },
-      onAbort: (entry) => {
-        fragment.status = DownloadStatus.WAITING;
-        this.player.emit(DefaultPlayerEvents.FRAGMENT_UPDATE, fragment);
-        if (callbacks.onAbort) callbacks.onAbort(entry);
-      },
-    }, priority);
+    };
+  }
 
-    return loader;
+  _onSuccess(callbacks, entry, data, fragment, context) {
+    callbacks.onSuccess({
+      url: entry.url,
+      data: data,
+    }, entry.stats, context, null);
   }
 }

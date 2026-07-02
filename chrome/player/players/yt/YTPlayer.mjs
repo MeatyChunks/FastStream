@@ -719,14 +719,6 @@ export default class YTPlayer extends DashPlayer {
     const newResponse = await this.sabrPostProcessor(responseObject);
     // console.log(requestMetadata, newResponse);
 
-    if (!this.debugDownloadList) {
-      this.debugDownloadList = [];
-    }
-    this.debugDownloadList.push({
-      data: newResponse.data,
-    });
-
-
     if (!newResponse.data) {
       throw new Error('(r) No data from SABR UMP processor');
     }
@@ -771,38 +763,12 @@ export default class YTPlayer extends DashPlayer {
 
       // console.log(requestMetadata, newResponse);
 
-      if (!this.debugDownloadList) {
-        this.debugDownloadList = [];
-      }
-      this.debugDownloadList.push({
-        data: newResponse.data,
-      });
-
       if (!newResponse.data) {
         throw new Error('No data from SABR UMP processor');
       }
       return newResponse;
     }
     return response;
-  }
-
-  downloadDebugList() {
-    if (!this.debugDownloadList || this.debugDownloadList.length === 0) {
-      console.warn('No debug download list available');
-      return;
-    }
-    // download each item as separate file
-    this.debugDownloadList.forEach((item, index) => {
-      const blob = new Blob([item.data], {type: 'application/octet-stream'});
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `debug-download-${index}.bin`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    });
   }
 
   dispose() {

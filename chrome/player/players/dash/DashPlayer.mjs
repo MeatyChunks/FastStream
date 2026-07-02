@@ -5,12 +5,13 @@ import {MediaPlayer} from '../../modules/dash.mjs';
 import {EmitterRelay, EventEmitter} from '../../modules/eventemitter.mjs';
 import {Utils} from '../../utils/Utils.mjs';
 import {VideoUtils} from '../../utils/VideoUtils.mjs';
+import PlayerBase from '../PlayerBase.mjs';
 import {DashFragment} from './DashFragment.mjs';
 import {DashFragmentRequester} from './DashFragmentRequester.mjs';
 import {DASHLoaderFactory} from './DashLoader.mjs';
 import {DashTrackUtils} from './DashTrackUtils.mjs';
 
-export default class DashPlayer extends EventEmitter {
+export default class DashPlayer extends PlayerBase {
   constructor(client, config) {
     super();
     this.client = client;
@@ -198,25 +199,9 @@ export default class DashPlayer extends EventEmitter {
     }
   }
 
-  load() {
-
-  }
-
-  getClient() {
-    return this.client;
-  }
-
-  getVideo() {
-    return this.video;
-  }
-
   async setSource(source) {
     this.source = source;
     this.dash.initialize(this.video, this.source.url, false);
-  }
-
-  getSource() {
-    return this.source;
   }
 
   downloadFragment(fragment, priority) {
@@ -245,10 +230,6 @@ export default class DashPlayer extends EventEmitter {
 
   async pause() {
     return this.video.pause();
-  }
-
-  set currentTime(value) {
-    this.video.currentTime = value;
   }
 
   destroy() {
@@ -328,10 +309,6 @@ export default class DashPlayer extends EventEmitter {
     } catch (e) {
       console.warn(e);
     }
-  }
-
-  get duration() {
-    return this.video.duration;
   }
 
   get currentFragment() {
@@ -468,37 +445,7 @@ export default class DashPlayer extends EventEmitter {
     }
   }
 
-  get volume() {
-    return this.video.volume;
-  }
-
-  set volume(value) {
-    this.video.volume = value;
-    if (value === 0) this.video.muted = true;
-    else this.video.muted = false;
-  }
-
-  get playbackRate() {
-    return this.video.playbackRate;
-  }
-
-  set playbackRate(value) {
-    this.video.playbackRate = value;
-  }
-
   get buffered() {
     return this.video.buffered;
-  }
-
-  get currentTime() {
-    return this.video.currentTime;
-  }
-
-  get readyState() {
-    return this.video.readyState;
-  }
-
-  get paused() {
-    return this.video.paused;
   }
 }

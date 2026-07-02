@@ -1,21 +1,13 @@
-import {DefaultPlayerEvents} from '../enums/DefaultPlayerEvents.mjs';
 import {EmitterRelay, EventEmitter} from '../modules/eventemitter.mjs';
 import {VideoUtils} from '../utils/VideoUtils.mjs';
+import PlayerBase from './PlayerBase.mjs';
 
-export default class DirectVideoPlayer extends EventEmitter {
+export default class DirectVideoPlayer extends PlayerBase {
   constructor(client, config) {
     super();
     this.client = client;
 
     this.video = document.createElement(config?.isAudioOnly ? 'audio' : 'video');
-  }
-
-  load() {
-
-  }
-
-  getClient() {
-    return this.client;
   }
 
 
@@ -26,17 +18,9 @@ export default class DirectVideoPlayer extends EventEmitter {
   }
 
 
-  getVideo() {
-    return this.video;
-  }
-
   async setSource(source) {
     this.source = source;
     this.video.src = source.url;
-  }
-
-  getSource() {
-    return this.source;
   }
 
   get buffered() {
@@ -51,92 +35,17 @@ export default class DirectVideoPlayer extends EventEmitter {
     return this.video.pause();
   }
 
-  destroy() {
-    VideoUtils.destroyVideo(this.video);
-    this.video = null;
-
-    this.emit(DefaultPlayerEvents.DESTROYED);
-  }
-
-
-  set currentTime(value) {
-    this.video.currentTime = value;
-  }
-
-  get currentTime() {
-    return this.video.currentTime;
-  }
-
-  get readyState() {
-    return this.video.readyState;
-  }
-
-  get paused() {
-    return this.video.paused;
-  }
 
   get levels() {
     return null;
-  }
-
-  get duration() {
-    return this.video.duration;
   }
 
   get currentFragment() {
     return null;
   }
 
-  canSave() {
-    return {
-      cantSave: true,
-      canSave: false,
-      isComplete: true,
-    };
-  }
-
   async saveVideo(options) {
 
 
-  }
-
-  get volume() {
-    return this.video.volume;
-  }
-
-  set volume(value) {
-    this.video.volume = value;
-    if (value === 0) this.video.muted = true;
-    else this.video.muted = false;
-  }
-
-  get playbackRate() {
-    return this.video.playbackRate;
-  }
-
-  set playbackRate(value) {
-    this.video.playbackRate = value;
-  }
-
-  getVideoLevels() {
-    return null;
-  }
-
-  getAudioLevels() {
-    return null;
-  }
-
-  getCurrentVideoLevelID() {
-    return null;
-  }
-
-  getCurrentAudioLevelID() {
-    return null;
-  }
-
-  setCurrentVideoLevelID(levelID) {
-  }
-
-  setCurrentAudioLevelID(levelID) {
   }
 }

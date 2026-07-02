@@ -6,6 +6,7 @@ import {MP4Box} from '../../modules/mp4box.mjs';
 import {Utils} from '../../utils/Utils.mjs';
 import {VideoUtils} from '../../utils/VideoUtils.mjs';
 import {AudioLevel, VideoLevel} from '../Levels.mjs';
+import PlayerBase from '../PlayerBase.mjs';
 import {MP4Fragment} from './MP4Fragment.mjs';
 import {MP4FragmentRequester} from './MP4FragmentRequester.mjs';
 import {SourceBufferWrapper} from './SourceBufferWrapper.mjs';
@@ -14,7 +15,7 @@ const FRAGMENT_SIZE = 1000000;
 const VIDEO_TRACK = 0;
 const AUDIO_TRACK = 1;
 
-export default class MP4Player extends EventEmitter {
+export default class MP4Player extends PlayerBase {
   constructor(client, config) {
     super();
     this.client = client;
@@ -55,10 +56,6 @@ export default class MP4Player extends EventEmitter {
 
   load() {
     this.loaded = true;
-  }
-
-  getClient() {
-    return this.client;
   }
 
   removeSourceBuffers() {
@@ -267,10 +264,6 @@ export default class MP4Player extends EventEmitter {
     this.load();
   }
 
-  getVideo() {
-    return this.video;
-  }
-
   async setSource(source) {
     if (this.source) {
       throw new Error('Source already set');
@@ -286,10 +279,6 @@ export default class MP4Player extends EventEmitter {
 
     this.running = true;
     this.mainLoop();
-  }
-
-  getSource() {
-    return this.source;
   }
 
   mainLoop() {
@@ -584,14 +573,6 @@ export default class MP4Player extends EventEmitter {
     return this.video.currentTime;
   }
 
-  get readyState() {
-    return this.video.readyState;
-  }
-
-  get paused() {
-    return this.video.paused;
-  }
-
   getVideoLevels() {
     if (!this.metaData) return new Map();
     const track = this.metaData.videoTracks[0];
@@ -630,12 +611,6 @@ export default class MP4Player extends EventEmitter {
 
   getCurrentAudioLevelID() {
     return this.getIdentifier(AUDIO_TRACK, this.currentAudioTrack);
-  }
-
-  setCurrentVideoLevelID(levelID) { // not implemented yet
-  }
-
-  setCurrentAudioLevelID(levelID) { // not implemented yet
   }
 
 
@@ -833,24 +808,6 @@ export default class MP4Player extends EventEmitter {
       writer.abort();
       throw e;
     }
-  }
-
-  get volume() {
-    return this.video.volume;
-  }
-
-  set volume(value) {
-    this.video.volume = value;
-    if (value === 0) this.video.muted = true;
-    else this.video.muted = false;
-  }
-
-  get playbackRate() {
-    return this.video.playbackRate;
-  }
-
-  set playbackRate(value) {
-    this.video.playbackRate = value;
   }
 
 
