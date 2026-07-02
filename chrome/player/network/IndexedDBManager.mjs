@@ -33,11 +33,12 @@ export class IndexedDBManager {
     if (!this.isPersistent()) {
       this.prune();
       // keepAlive refreshes `updated_time` so prune() (staleness window 10000ms)
-      // doesn't sweep this DB. 9000ms keeps us safely under the window while
-      // cutting IDB writes 9x vs the previous 1s interval.
+      // doesn't sweep this DB. 5000ms gives a 5s safety margin under that window
+      // (setInterval can slip under event-loop pressure) while cutting IDB writes
+      // 5x vs the previous 1s interval.
       this.aliveInterval = setInterval(()=>{
         this.keepAlive();
-      }, 9000);
+      }, 5000);
       this.dbName = 'faststream-temp-' + Date.now() + '-' + Math.floor(Math.random() * 1000000);
     } else {
       this.dbName = this.persistentName;

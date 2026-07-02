@@ -313,6 +313,7 @@ export class AudioEqualizer extends AbstractAudioModule {
   updateEqualizerNodeMarkers() {
     Array.from(this.ui.equalizerNodes.children).forEach((node) => {
       if (node.classList.contains('zero_line_node')) return;
+      if (node._invalidateRect) window.removeEventListener('resize', node._invalidateRect);
       node.remove();
     });
 
@@ -364,6 +365,7 @@ export class AudioEqualizer extends AbstractAudioModule {
       let cachedRect = null;
       const invalidateRect = () => { cachedRect = null; };
       window.addEventListener('resize', invalidateRect);
+      el._invalidateRect = invalidateRect;
 
       const updateTooltip = (x, y) => {
         if (y < 40) {
