@@ -1,0 +1,35 @@
+# Manual-only build. Produces extension packages as workflow artifacts.
+# Intentionally no push trigger, no version bump, no tag, no auto-release
+# (the previous auto-bump/tag flow failed when tags already existed).
+name: Build Extension
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build extension packages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      - name: Install dependencies
+        # npm install (not npm ci): the committed lockfile predates current npm,
+        # and `npm ci` rejects it over an un-recorded optional peer dep of
+        # addons-linter (node-fetch@2.6.11). `npm install` is lenient about this.
+        run: npm install
+      - name: Build
+        run: npm run build
+      - name: Upload built packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: faststream-build-${{ github.run_number }}
+          path: built/*.zip
+          if-no-files-found: error
