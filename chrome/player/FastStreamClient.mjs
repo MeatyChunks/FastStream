@@ -295,6 +295,10 @@ export class FastStreamClient extends EventEmitter {
       this.progressMemory.destroy();
       this.progressMemory = null;
     }
+    if (this._initHookInterval) {
+      clearInterval(this._initHookInterval);
+      this._initHookInterval = null;
+    }
   }
 
   /**
@@ -908,16 +912,18 @@ export class FastStreamClient extends EventEmitter {
    */
   setupInitHook() {
     return new Promise((resolve) => {
-      let interval = 0;
-
       const hook = () => {
+        if (!this.context) return;
         if (!this.duration || !this.currentVideo || this.currentVideo.readyState === 0) return;
-        clearInterval(interval);
+        if (this._initHookInterval) {
+          clearInterval(this._initHookInterval);
+          this._initHookInterval = null;
+        }
         this.context.off(DefaultPlayerEvents.DURATIONCHANGE, hook);
         resolve();
       };
 
-      interval = setInterval(hook, 1000);
+      this._initHookInterval = setInterval(hook, 1000);
 
       this.context.on(DefaultPlayerEvents.DURATIONCHANGE, hook);
       hook();
@@ -1246,6 +1252,11 @@ export class FastStreamClient extends EventEmitter {
     const promises = [];
     this.lastTime = 0;
 
+    if (this._initHookInterval) {
+      clearInterval(this._initHookInterval);
+      this._initHookInterval = null;
+    }
+
     this.fragmentsStore = {};
     this.pastSeeks.length = 0;
     this.pastUnseeks.length = 0;
@@ -1339,138 +1350,82 @@ export class FastStreamClient extends EventEmitter {
    */
   bindPlayer(player) {
     this.context = player.createContext();
-    this.context.on(DefaultPlayerEvents.MANIFEST_PARSED, () => {
-      console.log('MANIFEST_PARSED');
-      this.updateQualityLevels();
-    });
 
-    this.context.on(DefaultPlayerEvents.ABORT, (event) => {
+    const HANDLERS = {
+      [DefaultPlayerEvents.MANIFEST_PARSED]: () => {
+        console.log('MANIFEST_PARSED');
+        this.updateQualityLevels();
+      },
+      [DefaultPlayerEvents.CANPLAY]: (event) => {
+        this.player.playbackRate = this.state.playbackRate;
 
-    });
+        if (!this.state.autoPlayTriggered && this.options.autoPlay && this.state.playing === false) {
+          this.state.autoPlayTriggered = true;
+          this.play();
+        }
+      },
+      [DefaultPlayerEvents.DURATIONCHANGE]: (event) => {
+        this.updateDuration();
+        this.interfaceController.updateFragmentsLoaded();
+      },
+      [DefaultPlayerEvents.ENDED]: (event) => {
+        this.pause();
+        if (this.options.autoplayNext) {
+          this.nextVideo();
+        }
+      },
+      [DefaultPlayerEvents.ERROR]: (event, msg) => {
+        console.error('ERROR', event);
+        this.failedToLoad(msg || Localize.getMessage('player_error_load'));
+      },
+      [DefaultPlayerEvents.NEED_KEY]: (event) => {
+        this.failedToLoad(Localize.getMessage('player_error_drm'));
+      },
+      [DefaultPlayerEvents.LOADEDDATA]: (event) => {
+        this.audioConfigManager.updateChannelCount();
+      },
+      [DefaultPlayerEvents.LOADEDMETADATA]: (event) => {
+        this.interfaceController.updateQualityLevels();
+      },
+      [DefaultPlayerEvents.PAUSE]: (event) => {
+        this.interfaceController.pause();
+      },
+      [DefaultPlayerEvents.PLAY]: (event) => {
+        this.interfaceController.play();
+      },
+      [DefaultPlayerEvents.PLAYING]: (event) => {
+        this.interfaceController.setBuffering(false);
+      },
+      [DefaultPlayerEvents.SEEKED]: (event) => {
+        this.interfaceController.updateFragmentsLoaded();
+      },
+      [DefaultPlayerEvents.TIMEUPDATE]: (event) => {
+        if (this.interfaceController.isUserSeeking()) return;
 
-    this.context.on(DefaultPlayerEvents.CANPLAY, (event) => {
-      this.player.playbackRate = this.state.playbackRate;
+        this.updateTime(this.currentTime);
 
-      if (!this.state.autoPlayTriggered && this.options.autoPlay && this.state.playing === false) {
-        this.state.autoPlayTriggered = true;
-        this.play();
-      }
-    });
+        if (this.videoAnalyzer.pushFrame(this.player.getVideo())) {
+          this.videoAnalyzer.calculate();
+        }
+      },
+      [DefaultPlayerEvents.WAITING]: (event) => {
+        if (this.options.autoplayNext && this.duration > 5&&this.duration - this.currentTime < 1) {
+          this.nextVideo();
+          return;
+        }
+        this.interfaceController.setBuffering(true);
+      },
+      [DefaultPlayerEvents.FRAGMENT_UPDATE]: () => {
+        this.interfaceController.updateFragmentsLoaded();
+      },
+      [DefaultPlayerEvents.SKIP_SEGMENTS]: () => {
+        this.interfaceController.updateSkipSegments();
+      },
+    };
 
-    this.context.on(DefaultPlayerEvents.CANPLAYTHROUGH, (event) => {
-
-    });
-
-    this.context.on(DefaultPlayerEvents.COMPLETE, (event) => {
-
-    });
-
-    this.context.on(DefaultPlayerEvents.DURATIONCHANGE, (event) => {
-      this.updateDuration();
-      this.interfaceController.updateFragmentsLoaded();
-    });
-
-    this.context.on(DefaultPlayerEvents.EMPTIED, (event) => {
-    });
-
-
-    this.context.on(DefaultPlayerEvents.ENDED, (event) => {
-      this.pause();
-      if (this.options.autoplayNext) {
-        this.nextVideo();
-      }
-    });
-
-    this.context.on(DefaultPlayerEvents.ERROR, (event, msg) => {
-      console.error('ERROR', event);
-      this.failedToLoad(msg || Localize.getMessage('player_error_load'));
-    });
-
-    this.context.on(DefaultPlayerEvents.NEED_KEY, (event) => {
-      this.failedToLoad(Localize.getMessage('player_error_drm'));
-    });
-
-    this.context.on(DefaultPlayerEvents.LOADEDDATA, (event) => {
-      this.audioConfigManager.updateChannelCount();
-    });
-
-
-    this.context.on(DefaultPlayerEvents.LOADEDMETADATA, (event) => {
-      this.interfaceController.updateQualityLevels();
-    });
-
-
-    this.context.on(DefaultPlayerEvents.PAUSE, (event) => {
-      this.interfaceController.pause();
-    });
-
-
-    this.context.on(DefaultPlayerEvents.PLAY, (event) => {
-      this.interfaceController.play();
-    });
-
-
-    this.context.on(DefaultPlayerEvents.PLAYING, (event) => {
-      this.interfaceController.setBuffering(false);
-    });
-
-
-    this.context.on(DefaultPlayerEvents.PROGRESS, (event) => {
-    });
-
-
-    this.context.on(DefaultPlayerEvents.RATECHANGE, (event) => {
-    });
-
-
-    this.context.on(DefaultPlayerEvents.SEEKED, (event) => {
-      this.interfaceController.updateFragmentsLoaded();
-    });
-
-
-    this.context.on(DefaultPlayerEvents.SEEKING, (event) => {
-    });
-
-
-    this.context.on(DefaultPlayerEvents.STALLED, (event) => {
-    });
-
-
-    this.context.on(DefaultPlayerEvents.SUSPEND, (event) => {
-    });
-
-
-    this.context.on(DefaultPlayerEvents.TIMEUPDATE, (event) => {
-      if (this.interfaceController.isUserSeeking()) return;
-
-      this.updateTime(this.currentTime);
-
-      if (this.videoAnalyzer.pushFrame(this.player.getVideo())) {
-        this.videoAnalyzer.calculate();
-      }
-    });
-
-
-    this.context.on(DefaultPlayerEvents.VOLUMECHANGE, (event) => {
-
-    });
-
-
-    this.context.on(DefaultPlayerEvents.WAITING, (event) => {
-      if (this.options.autoplayNext && this.duration > 5&&this.duration - this.currentTime < 1) {
-        this.nextVideo();
-        return;
-      }
-      this.interfaceController.setBuffering(true);
-    });
-
-    this.context.on(DefaultPlayerEvents.FRAGMENT_UPDATE, () => {
-      this.interfaceController.updateFragmentsLoaded();
-    });
-
-    this.context.on(DefaultPlayerEvents.SKIP_SEGMENTS, () => {
-      this.interfaceController.updateSkipSegments();
-    });
+    for (const [evt, fn] of Object.entries(HANDLERS)) {
+      this.context.on(evt, fn);
+    }
   }
 
   /**
@@ -2007,19 +1962,5 @@ export class FastStreamClient extends EventEmitter {
     return this.player?.getVideo().videoHeight || 0;
   }
 
-  /**
-   * Runs a debug demo for the player.
-   */
-  debugDemo() {
-    this.interfaceController.hideControlBar = ()=>{};
-
-    this.videoAnalyzer.introAligner.detectedStartTime = 0;
-    this.videoAnalyzer.introAligner.detectedEndTime = 30;
-    this.videoAnalyzer.introAligner.found = true;
-    this.videoAnalyzer.introAligner.emit('match', true);
-
-    this.currentTime = 6;
-    this.player.getVideo().style.objectFit = 'cover';
-  }
 }
 

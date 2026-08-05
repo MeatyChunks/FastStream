@@ -6,12 +6,13 @@ import {EmitterRelay, EventEmitter} from '../../modules/eventemitter.mjs';
 import {Hls} from '../../modules/hls.mjs';
 import {Utils} from '../../utils/Utils.mjs';
 import {VideoUtils} from '../../utils/VideoUtils.mjs';
+import PlayerBase from '../PlayerBase.mjs';
 import {HLSFragment} from './HLSFragment.mjs';
 import {HLSFragmentRequester} from './HLSFragmentRequester.mjs';
 import {HLSLoaderFactory} from './HLSLoader.mjs';
 
 
-export default class HLSPlayer extends EventEmitter {
+export default class HLSPlayer extends PlayerBase {
   constructor(client, config) {
     super();
     this.client = client;
@@ -212,10 +213,6 @@ export default class HLSPlayer extends EventEmitter {
     this.hls.startLoad();
   }
 
-  getClient() {
-    return this.client;
-  }
-
 
   async setup() {
     this.hls.attachMedia(this.video);
@@ -299,10 +296,6 @@ export default class HLSPlayer extends EventEmitter {
       }
     });
   }
-  getVideo() {
-    return this.video;
-  }
-
   getIdentifier(trackID, levelID) {
     return `${trackID}:${levelID}`;
   }
@@ -318,10 +311,6 @@ export default class HLSPlayer extends EventEmitter {
   async setSource(source) {
     this.source = source;
     this.hls.loadSource(source.url);
-  }
-
-  getSource() {
-    return this.source;
   }
 
   downloadFragment(fragment, priority) {
@@ -358,6 +347,9 @@ export default class HLSPlayer extends EventEmitter {
 
   destroy() {
     this.fragmentRequester.destroy();
+    if (this.hls && !this.hls.destroyed) {
+      this.hls.stopLoad();
+    }
     this.hls.destroy();
 
     VideoUtils.destroyVideo(this.video);
@@ -379,14 +371,6 @@ export default class HLSPlayer extends EventEmitter {
 
   get currentTime() {
     return this.video.currentTime;
-  }
-
-  get readyState() {
-    return this.video.readyState;
-  }
-
-  get paused() {
-    return this.video.paused;
   }
 
   getVideoLevels() {
@@ -435,10 +419,6 @@ export default class HLSPlayer extends EventEmitter {
     this.hls.currentLevel = this.getIndexes(value).levelID;
   }
 
-  get duration() {
-    return this.video.duration;
-  }
-
   get currentFragment() {
     if (!this.hls.streamController.currentFrag) return null;
     return this.client.getFragment(this.getIdentifier(0, this.hls.streamController.currentFrag.level), this.hls.streamController.currentFrag.sn);
@@ -462,23 +442,5 @@ export default class HLSPlayer extends EventEmitter {
       if (!frag) return false;
       return time >= frag.start && time < frag.end;
     });
-  }
-
-  get volume() {
-    return this.video.volume;
-  }
-
-  set volume(value) {
-    this.video.volume = value;
-    if (value === 0) this.video.muted = true;
-    else this.video.muted = false;
-  }
-
-  get playbackRate() {
-    return this.video.playbackRate;
-  }
-
-  set playbackRate(value) {
-    this.video.playbackRate = value;
   }
 }

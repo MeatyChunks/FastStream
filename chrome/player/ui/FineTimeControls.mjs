@@ -461,13 +461,26 @@ export class FineTimeControls extends EventEmitter {
       }
     }
 
-    this.canvasElements.forEach((el) => {
+    // Pass 1: batch all layout reads (clientWidth/clientHeight) up front so
+    // the browser only reflows once for the whole canvas set. Filter to the
+    // subset that actually needs redraw (size changed). The cache check still
+    // costs a read, but reads are now consolidated and never interleaved with
+    // the canvas-pixel writes below (which invalidate layout).
+    const toRedraw = [];
+    for (let i = 0; i < this.canvasElements.length; i++) {
+      const el = this.canvasElements[i];
       const newWidth = el.element.clientWidth * window.devicePixelRatio;
       const newHeight = el.element.clientHeight * window.devicePixelRatio;
-      if (newWidth === 0) return;
-      if (el.cachedWidth === newWidth && el.cachedHeight === newHeight) return;
+      if (newWidth === 0) continue;
+      if (el.cachedWidth === newWidth && el.cachedHeight === newHeight) continue;
       el.cachedWidth = newWidth;
       el.cachedHeight = newHeight;
+      toRedraw.push({el, newWidth});
+    }
+
+    // Pass 2: writes + drawing. No layout reads here — el.element.width and
+    // el.element.height are canvas pixel dimensions, not CSS layout boxes.
+    for (const {el, newWidth} of toRedraw) {
       const index = el.index;
       const time = index * 10;
       const startFrame2 = Math.floor(time * outputRate);
@@ -522,7 +535,7 @@ export class FineTimeControls extends EventEmitter {
         }
         context.stroke();
       }
-    });
+    }
   }
 
   mousePositionToTime(clientX) {
