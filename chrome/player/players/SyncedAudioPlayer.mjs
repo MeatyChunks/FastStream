@@ -3,6 +3,9 @@ import {EventEmitter} from '../modules/eventemitter.mjs';
 import {Localize} from '../modules/Localize.mjs';
 import {Utils} from '../utils/Utils.mjs';
 
+const MIN_PLAYBACK_RATE = 0.25;
+const MAX_PLAYBACK_RATE = 16;
+
 export class SyncedAudioPlayer extends EventEmitter {
   constructor(client) {
     super();
@@ -16,6 +19,7 @@ export class SyncedAudioPlayer extends EventEmitter {
     this.audioDelayNode = null;
     this.resyncDecreaseCount = 0;
     this.madePlayers = false;
+    this.destroyed = false;
   }
 
   async setup(audioContext, audioSource, audioOutputNode) {
@@ -25,7 +29,7 @@ export class SyncedAudioPlayer extends EventEmitter {
   }
 
   async setVideoDelay(delay) {
-    if (this.videoDelay === delay || !this.client.player) {
+    if (this.videoDelay === delay || !this.client.player || this.destroyed) {
       return;
     }
 
@@ -54,13 +58,11 @@ export class SyncedAudioPlayer extends EventEmitter {
       }
 
       this.audioDelayNode.delayTime.value = -this.videoDelay / 1000;
-    } else {
-      if (this.audioDelayNode) {
-        this.outputNode.disconnectFrom(this.audioDelayNode);
-        this.audioSource.disconnect(this.audioDelayNode);
-        this.outputNode.connectFrom(this.audioSource);
-        this.audioDelayNode = null;
-      }
+    } else if (this.audioDelayNode) {
+      this.outputNode.disconnectFrom(this.audioDelayNode);
+      this.audioSource.disconnect(this.audioDelayNode);
+      this.outputNode.connectFrom(this.audioSource);
+      this.audioDelayNode = null;
     }
     this.consecutiveResyncs = 0;
   }
@@ -73,6 +75,8 @@ export class SyncedAudioPlayer extends EventEmitter {
     this.source = source;
 
     for (let i = 0; i < 2; i++) {
+      if (this.destroyed) return;
+
       const player = await this.client.playerLoader.createPlayer(source.mode, this.client, {
         isAudioOnly: true,
       });
@@ -99,9 +103,12 @@ export class SyncedAudioPlayer extends EventEmitter {
       });
 
       this.client.attachProcessorsToPlayer(player);
-
       await player.setSource(source);
 
+      if (this.destroyed) {
+        player.destroy();
+        return;
+      }
       this.audioPlayers.push(player);
     }
   }
@@ -111,26 +118,20 @@ export class SyncedAudioPlayer extends EventEmitter {
   }
 
   async play() {
-    if (!this.shouldUseSeparateAudioPlayers() || this.audioPlayers.length !== 2) {
-      return;
-    }
+    if (!this.shouldUseSeparateAudioPlayers() || this.audioPlayers.length !== 2) return;
     this.audioPlayers[this.currentAudioPlayer].play();
     this.resync();
     this.consecutiveResyncs = 0;
   }
 
   async pause() {
-    if (!this.shouldUseSeparateAudioPlayers() || this.audioPlayers.length !== 2) {
-      return;
-    }
+    if (!this.shouldUseSeparateAudioPlayers() || this.audioPlayers.length !== 2) return;
     this.audioPlayers[this.currentAudioPlayer].pause();
     this.consecutiveResyncs = 0;
   }
 
   setCurrentTime(time) {
-    if (!this.shouldUseSeparateAudioPlayers() || this.audioPlayers.length !== 2) {
-      return;
-    }
+    if (!this.shouldUseSeparateAudioPlayers() || this.audioPlayers.length !== 2) return;
     this.audioPlayers.forEach((player) => {
       player.currentTime = time + this.videoDelay / 1000;
     });
@@ -146,26 +147,18 @@ export class SyncedAudioPlayer extends EventEmitter {
       syncVideo.currentTime = targetVideo.currentTime + offset;
       if (!targetVideo.paused) {
         res = await Utils.timeoutableEvent(playerToSync, DefaultPlayerEvents.PLAYING, 1000);
-        if (!res) {
-          return false;
-        }
+        if (!res) return false;
       }
     } else {
       syncVideo.currentTime = targetVideo.currentTime + offset;
       res = await Utils.timeoutableEvent(playerToSync, DefaultPlayerEvents.PLAYING, 1000);
-      if (!res) {
-        return false;
-      }
+      if (!res) return false;
 
       await Utils.asyncTimeout(500);
-
       const error = (targetVideo.currentTime + offset) - syncVideo.currentTime;
       syncVideo.currentTime = (targetVideo.currentTime + offset) + error;
       res = await Utils.timeoutableEvent(playerToSync, DefaultPlayerEvents.PLAYING, 1000);
-      if (!res) {
-        return false;
-      }
-
+      if (!res) return false;
       await Utils.asyncTimeout(500);
     }
 
@@ -173,146 +166,105 @@ export class SyncedAudioPlayer extends EventEmitter {
   }
 
   async watcherLoop() {
-    if (this.audioPlayers.length < 2 || !this.shouldUseSeparateAudioPlayers()) {
-      return;
-    }
+    if (this.destroyed || this.audioPlayers.length < 2 || !this.shouldUseSeparateAudioPlayers()) return;
 
     if (this.resyncDecreaseCount > 0) {
       this.resyncDecreaseCount--;
     } else {
-      this.resyncDecreaseCount = 60; // 1 minute
-      if (this.consecutiveResyncs > 0) {
-        this.consecutiveResyncs--;
-      }
+      this.resyncDecreaseCount = 60;
+      if (this.consecutiveResyncs > 0) this.consecutiveResyncs--;
     }
 
     const currentPlayer = this.audioPlayers[this.currentAudioPlayer];
-
-    // Check error
     const offset = this.videoDelay / 1000;
     const error = Math.abs(this.client.currentVideo.currentTime + offset - currentPlayer.getVideo().currentTime);
-    // console.log('Error is', error);
-    if (error > 0.01 && this.client.currentVideo.readyState >= 2) {
-      if (!this.resyncing) {
-        let resyncMax = 1;
-        if (error > 0.05) {
-          resyncMax = 3;
-        } else if (error > 0.1) {
-          resyncMax = 6;
-        } else if (error > 0.2) {
-          resyncMax = 10;
-        }
+    if (error > 0.01 && this.client.currentVideo.readyState >= 2 && !this.resyncing) {
+      let resyncMax = 1;
+      if (error > 0.2) resyncMax = 10;
+      else if (error > 0.1) resyncMax = 6;
+      else if (error > 0.05) resyncMax = 3;
 
-        if (this.consecutiveResyncs < resyncMax) {
-          this.consecutiveResyncs++;
-          this.resync();
-          if (this.consecutiveResyncs === resyncMax) {
-            console.log('Will not resync anymore');
-          }
-        }
+      if (this.consecutiveResyncs < resyncMax) {
+        this.consecutiveResyncs++;
+        this.resync();
       }
-    } else {
+    } else if (error <= 0.01) {
       this.consecutiveResyncs = 0;
     }
   }
 
   async resync() {
-    if (this.resyncing) {
-      return;
-    }
+    if (this.resyncing || this.destroyed) return;
 
     this.resyncing = true;
-    await this.silentResyncInternal();
-    this.resyncing = false;
+    try {
+      await this.silentResyncInternal();
+    } finally {
+      this.resyncing = false;
+    }
   }
 
   async silentResyncInternal() {
-    if (this.audioPlayers.length < 1) {
-      return false;
-    }
+    if (this.destroyed || this.audioPlayers.length < 1) return false;
 
     const nextIndex = (this.currentAudioPlayer + 1) % 2;
     const current = this.audioPlayers[this.currentAudioPlayer];
     const next = this.audioPlayers[nextIndex];
-
-    // Get current error
     const offset = this.videoDelay / 1000;
     const error = (this.client.currentVideo.currentTime + offset) - current.getVideo().currentTime;
-    console.log('Resyncing audio, current error is', error);
 
     next.volume = 0;
+    next.playbackRate = this.playbackRate;
 
     if (this.client.state.playing && this.client.currentVideo.readyState >= 2) {
       try {
         await next.play();
       } catch (e) {
-        console.log('Failed to play audio');
         return false;
       }
     } else {
       await next.pause();
     }
 
-    const res = await this.syncTime(next, this.client.player, this.videoDelay / 1000);
-    if (!res) {
-      console.error('Failed to sync audio');
-      return false;
-    }
-
-    if (!this.shouldUseSeparateAudioPlayers()) {
-      return false;
-    }
+    const res = await this.syncTime(next, this.client.player, offset);
+    if (!res || this.destroyed || !this.shouldUseSeparateAudioPlayers()) return false;
 
     const newError = (this.client.currentVideo.currentTime + offset) - next.getVideo().currentTime;
-    if (Math.abs(newError) > Math.abs(error)) {
-      console.error('Failed to resync audio. New error is bigger than old error', newError, error);
-      return false;
-    }
+    if (Math.abs(newError) > Math.abs(error)) return false;
 
     next.volume = this.volume;
     current.volume = 0;
     this.currentAudioPlayer = nextIndex;
     this.client.player.volume = 0;
     await current.pause();
-
-    console.log('Resync complete! New error is', newError);
-
     return true;
   }
 
   setVolume(value) {
     this.volume = value;
-
-    if (!this.shouldUseSeparateAudioPlayers() || this.audioPlayers.length !== 2) {
-      return;
-    }
-
+    if (!this.shouldUseSeparateAudioPlayers() || this.audioPlayers.length !== 2) return;
     this.audioPlayers[this.currentAudioPlayer].volume = value;
     return true;
   }
 
   setPlaybackRate(value) {
-    this.playbackRate = value;
-
-    if (!this.shouldUseSeparateAudioPlayers() || this.audioPlayers.length !== 2) {
-      return;
-    }
+    const numericRate = Number(value);
+    const fallbackRate = Number(this.client?.state?.playbackRate) || 1;
+    this.playbackRate = Number.isFinite(numericRate) ?
+      Math.min(MAX_PLAYBACK_RATE, Math.max(MIN_PLAYBACK_RATE, numericRate)) : fallbackRate;
 
     this.audioPlayers.forEach((player) => {
-      player.playbackRate = value;
+      player.playbackRate = this.playbackRate;
     });
   }
 
   setLevel(videoLevel, audioLevel) {
-    const changed = false;
+    let changed = false;
     this.audioPlayers.forEach((player) => {
       const videoChanged = player.getCurrentVideoLevelID() !== videoLevel;
       const audioChanged = player.getCurrentAudioLevelID() !== audioLevel;
 
-      if (audioChanged || (videoChanged && audioLevel === null)) {
-        changed = true;
-      }
-
+      if (audioChanged || (videoChanged && audioLevel === null)) changed = true;
       player.setCurrentVideoLevelID(videoLevel);
       player.setCurrentAudioLevelID(audioLevel);
     });
@@ -324,8 +276,29 @@ export class SyncedAudioPlayer extends EventEmitter {
   }
 
   destroy() {
-    this.audioPlayers.forEach((player) => player.destroy());
+    if (this.destroyed) return;
+    this.destroyed = true;
+
+    this.audioPlayers.forEach((player) => {
+      try {
+        player.audioSource?.disconnect();
+        player.destroy();
+      } catch (e) {
+        console.warn('Failed to destroy synced audio player', e);
+      }
+    });
     this.audioPlayers = [];
-    this.audioContext.close().catch(() => {});
+
+    if (this.audioDelayNode) {
+      try {
+        this.audioDelayNode.disconnect();
+      } catch (e) {}
+      this.audioDelayNode = null;
+    }
+
+    this.audioContext?.close().catch(() => {});
+    this.audioContext = null;
+    this.audioSource = null;
+    this.outputNode = null;
   }
 }
