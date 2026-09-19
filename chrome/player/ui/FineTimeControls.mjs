@@ -4,6 +4,8 @@ import {WebUtils} from '../utils/WebUtils.mjs';
 import {StringUtils} from '../utils/StringUtils.mjs';
 import {Utils} from '../utils/Utils.mjs';
 
+const FRAME_SOURCE_REFRESH_MS = 100;
+
 export class FineTimeControls extends EventEmitter {
   constructor(client) {
     super();
@@ -20,6 +22,11 @@ export class FineTimeControls extends EventEmitter {
     this.audioSilencePaddingEnd = 0;
 
     this.stateStack = [];
+
+    this._timelineWindowKey = null;
+    this._audioDirty = true;
+    this._lastFrameSourceRefresh = 0;
+    this._resizeObserver = null;
 
     this.setup();
   }
@@ -139,6 +146,15 @@ export class FineTimeControls extends EventEmitter {
     this.ui.timelineTrackContainer = WebUtils.create('div', '', 'timeline_track_container');
     this.ui.timelineContainer.appendChild(this.ui.timelineTrackContainer);
 
+    if (window.ResizeObserver) {
+      this._resizeObserver = new ResizeObserver(() => {
+        this._timelineWindowKey = null;
+        this._audioDirty = true;
+        this._lastFrameSourceRefresh = 0;
+      });
+      this._resizeObserver.observe(this.ui.timelineContainer);
+    }
+
     // timeline is grabbable
     let isGrabbing = false;
     let grabStart = 0;
@@ -204,9 +220,13 @@ export class FineTimeControls extends EventEmitter {
       }
       return false;
     });
+    this._audioDirty = true;
   }
 
   reset() {
+    this._timelineWindowKey = null;
+    this._audioDirty = true;
+    this._lastFrameSourceRefresh = 0;
     this.ticklineElements = [];
     this.frameElements = [];
     this.ui.timelineTicks.replaceChildren();
@@ -217,6 +237,7 @@ export class FineTimeControls extends EventEmitter {
   }
 
   resetAudio() {
+    this._audioDirty = true;
     this.canvasElements = [];
     this.ui.timelineAudioCanvasContainer.replaceChildren();
   }
@@ -258,6 +279,13 @@ export class FineTimeControls extends EventEmitter {
       return;
     }
     this.renderTimeline();
+  }
+
+  destroy() {
+    this.stop();
+    clearTimeout(this.closeTimeout);
+    this._resizeObserver?.disconnect();
+    this._resizeObserver = null;
   }
 
   renderTicks(duration, maxTime, minTime) {
@@ -303,80 +331,77 @@ export class FineTimeControls extends EventEmitter {
     }
   }
 
-  renderVideoFrames(duration, minTime, maxTime) {
+  renderVideoFrames(duration, minTime, maxTime, refreshSources = true) {
     const frameExtractor = this.client.frameExtractor;
     const frameBuffer = frameExtractor.getFrameBuffer();
     const outputRateInv = frameExtractor.getOutputRateInv();
 
-    const minFrameIndex = Math.floor(minTime / outputRateInv);
-    const maxFrameIndex = Math.ceil(maxTime / outputRateInv);
-
     const currentTime = this.client.currentTime;
     const currentFrame = Math.floor(currentTime / outputRateInv);
     const video = this.client.player.getVideo();
+    const isCurrentFrameValid = video.readyState >= 2 &&
+      !this.client.interfaceController.isUserSeeking() && frameBuffer[currentFrame];
 
-    const isCurrentFrameValid = video.readyState >= 2 && !this.client.interfaceController.isUserSeeking() && frameBuffer[currentFrame];
+    if (refreshSources) {
+      const minFrameIndex = Math.floor(minTime / outputRateInv);
+      const maxFrameIndex = Math.ceil(maxTime / outputRateInv);
+      const hasArr = new Array(maxFrameIndex - minFrameIndex).fill(false);
 
+      this.frameElements = this.frameElements.filter((el) => {
+        if (el.index < minFrameIndex || el.index > maxFrameIndex) {
+          el.element.remove();
+          return false;
+        }
+        hasArr[el.index - minFrameIndex] = true;
+        return true;
+      });
 
-    const hasArr = new Array(maxFrameIndex - minFrameIndex).fill(false);
-    this.frameElements = this.frameElements.filter((el) => {
-      if (el.index < minFrameIndex || el.index > maxFrameIndex) {
-        el.element.remove();
-        return false;
+      for (let frameIndex = minFrameIndex; frameIndex < maxFrameIndex; frameIndex++) {
+        if (hasArr[frameIndex - minFrameIndex]) continue;
+
+        const el = WebUtils.create('img', '', 'timeline_frame');
+        el.style.left = frameIndex * outputRateInv / duration * 100 + '%';
+        el.style.width = outputRateInv / duration * 100 + '%';
+        el.style.display = 'none';
+        el.draggable = false;
+        this.ui.timelineImages.appendChild(el);
+
+        this.frameElements.push({
+          index: frameIndex,
+          element: el,
+          cachedSrc: null,
+        });
       }
-      hasArr[el.index - minFrameIndex] = true;
-      return true;
-    });
 
-    for (let frameIndex = minFrameIndex; frameIndex < maxFrameIndex; frameIndex++) {
-      if (hasArr[frameIndex - minFrameIndex]) continue;
+      this.frameElements.forEach((el) => {
+        let src = el.index;
+        if (el.index < currentFrame) {
+          src++;
+        } else if (el.index === currentFrame && isCurrentFrameValid) {
+          src = -1;
+        }
 
-      const el = WebUtils.create('img', '', 'timeline_frame');
-      el.style.left = frameIndex * outputRateInv / duration * 100 + '%';
-      el.style.width = outputRateInv / duration * 100 + '%';
-      el.style.display = 'none';
-      el.draggable = false;
-      this.ui.timelineImages.appendChild(el);
+        if (el.cachedSrc === src) return;
 
-      this.frameElements.push({
-        index: frameIndex,
-        element: el,
-        cachedSrc: null,
+        if (src === -1) {
+          el.cachedSrc = src;
+          el.element.style.display = 'none';
+          return;
+        }
+
+        if (frameBuffer[src]) {
+          el.element.src = frameBuffer[src].url;
+          el.cachedSrc = src;
+          el.element.style.display = '';
+        } else {
+          el.element.style.display = 'none';
+        }
       });
     }
 
-    this.frameElements.forEach((el) => {
-      const index = el.index;
-
-
-      let src = index;
-      if (index < currentFrame) {
-        src++;
-      } else if (index === currentFrame && isCurrentFrameValid) {
-        src = -1;
-      }
-
-
-      if (el.cachedSrc === src) return;
-
-      if (src === -1) {
-        el.cachedSrc = src;
-        el.element.style.display = 'none';
-        return;
-      }
-
-      if (frameBuffer[src]) {
-        el.element.src = frameBuffer[src].url;
-        el.cachedSrc = src;
-        el.element.style.display = '';
-      } else {
-        el.element.style.display = 'none';
-      }
-    });
-
-
     if (isCurrentFrameValid) {
-      if (currentFrame === this.lastFrameRenderIndex && Math.abs(this.lastFrameRenderTime - currentTime) < 0.0435) { // 1/23
+      if (currentFrame === this.lastFrameRenderIndex &&
+          Math.abs(this.lastFrameRenderTime - currentTime) < 0.0435) {
         return;
       }
       this.lastFrameRenderIndex = currentFrame;
@@ -387,7 +412,8 @@ export class FineTimeControls extends EventEmitter {
         this.currentFrameCanvas.width = newWidth;
       }
 
-      this.currentFrameCtx.drawImage(video, 0, 0, this.currentFrameCanvas.width, this.currentFrameCanvas.height);
+      this.currentFrameCtx.drawImage(
+          video, 0, 0, this.currentFrameCanvas.width, this.currentFrameCanvas.height);
       this.currentFrameCanvas.style.left = currentFrame * outputRateInv / duration * 100 + '%';
       this.currentFrameCanvas.style.width = outputRateInv / duration * 100 + '%';
       this.currentFrameCanvas.style.display = '';
@@ -461,13 +487,26 @@ export class FineTimeControls extends EventEmitter {
       }
     }
 
-    this.canvasElements.forEach((el) => {
+    // Pass 1: batch all layout reads (clientWidth/clientHeight) up front so
+    // the browser only reflows once for the whole canvas set. Filter to the
+    // subset that actually needs redraw (size changed). The cache check still
+    // costs a read, but reads are now consolidated and never interleaved with
+    // the canvas-pixel writes below (which invalidate layout).
+    const toRedraw = [];
+    for (let i = 0; i < this.canvasElements.length; i++) {
+      const el = this.canvasElements[i];
       const newWidth = el.element.clientWidth * window.devicePixelRatio;
       const newHeight = el.element.clientHeight * window.devicePixelRatio;
-      if (newWidth === 0) return;
-      if (el.cachedWidth === newWidth && el.cachedHeight === newHeight) return;
+      if (newWidth === 0) continue;
+      if (el.cachedWidth === newWidth && el.cachedHeight === newHeight) continue;
       el.cachedWidth = newWidth;
       el.cachedHeight = newHeight;
+      toRedraw.push({el, newWidth});
+    }
+
+    // Pass 2: writes + drawing. No layout reads here — el.element.width and
+    // el.element.height are canvas pixel dimensions, not CSS layout boxes.
+    for (const {el, newWidth} of toRedraw) {
       const index = el.index;
       const time = index * 10;
       const startFrame2 = Math.floor(time * outputRate);
@@ -522,7 +561,7 @@ export class FineTimeControls extends EventEmitter {
         }
         context.stroke();
       }
-    });
+    }
   }
 
   mousePositionToTime(clientX) {
@@ -536,24 +575,41 @@ export class FineTimeControls extends EventEmitter {
     if (!this.started || !this.client.interfaceController.controlsVisible || !this.client.player) return;
 
     const time = this.client.state.currentTime;
-
     const video = this.client.player.getVideo();
     const duration = video.duration;
+    if (!Number.isFinite(duration) || duration <= 0) return;
 
     const timePerWidth = window.subEditMode ? 30 : 60;
     const minTime = Math.floor(Math.max(0, time - timePerWidth / 2 - 5));
-    const maxTime = Math.ceil(Math.min(video.duration, time + timePerWidth / 2 + 5));
-    this.ui.timelineContainer.style.width = (video.duration / timePerWidth) * 100 + '%';
+    const maxTime = Math.ceil(Math.min(duration, time + timePerWidth / 2 + 5));
+    const windowKey = `${duration}:${timePerWidth}:${minTime}:${maxTime}:${window.devicePixelRatio}`;
+    const structuralChanged = this._timelineWindowKey !== windowKey;
 
-    this.renderTicks(duration, maxTime, minTime);
-    this.renderAudio(duration, minTime, maxTime);
-
-    if (this.renderFrames) {
-      this.renderVideoFrames(duration, minTime, maxTime);
+    if (structuralChanged) {
+      this._timelineWindowKey = windowKey;
+      this.ui.timelineContainer.style.width = duration / timePerWidth * 100 + '%';
+      this.renderTicks(duration, maxTime, minTime);
+      this._audioDirty = true;
     }
 
-    this.ui.timelineContainer.style.transform = `translateX(${-(time - timePerWidth / 2) / duration * 100}%)`;
+    if (this._audioDirty) {
+      this.renderAudio(duration, minTime, maxTime);
+      this._audioDirty = false;
+    }
 
+    if (this.renderFrames) {
+      const now = performance.now();
+      const refreshSources = structuralChanged ||
+        now - this._lastFrameSourceRefresh >= FRAME_SOURCE_REFRESH_MS;
+      this.renderVideoFrames(duration, minTime, maxTime, refreshSources);
+      if (refreshSources) this._lastFrameSourceRefresh = now;
+    }
+
+    this.ui.timelineContainer.style.transform =
+      `translateX(${-(time - timePerWidth / 2) / duration * 100}%)`;
+
+    // Keep render events on the animation-frame path so subtitle dragging and other
+    // interactive overlays remain visually immediate even when structural work is cached.
     this.emit('render', minTime, maxTime);
   }
 
