@@ -47,6 +47,7 @@ export class VideoAnalyzer extends EventEmitter {
     this.lastAnalyzerSave = 0;
 
     this.enabled = true;
+    this.lastAnalyzeTime = Number.NEGATIVE_INFINITY;
   }
 
 
@@ -64,6 +65,7 @@ export class VideoAnalyzer extends EventEmitter {
     this.destroyPlayers();
     this.introStatus = AnalyzerStatus.IDLE;
     this.outroStatus = AnalyzerStatus.IDLE;
+    this.lastAnalyzeTime = Number.NEGATIVE_INFINITY;
   }
 
   saveAnalyzerData() {
@@ -414,6 +416,11 @@ export class VideoAnalyzer extends EventEmitter {
     if (!this.shouldAnalyze()) return false;
 
     const time = video.currentTime;
+    if (Math.abs(time - this.lastAnalyzeTime) < 0.33) {
+      return false;
+    }
+    this.lastAnalyzeTime = time;
+
     if (time < this.options.introCutoff) {
       return this.introAligner.pushVideoFrame(video);
     } else if (this.client.duration - this.options.outroCutoff < time) {
