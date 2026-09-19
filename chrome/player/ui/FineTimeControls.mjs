@@ -175,11 +175,10 @@ export class FineTimeControls extends EventEmitter {
         this.client.player.pause();
       }
     };
-    this.ui.timelineTicks.addEventListener('mousedown', mouseDown);
-    // this.ui.timelineAudioCanvasContainer.addEventListener('mousedown', mouseDown);
-    // this.ui.timelineImages.addEventListener('mousedown', mouseDown);
+    this._timelineMouseDown = mouseDown;
+    this.ui.timelineTicks.addEventListener('mousedown', this._timelineMouseDown);
 
-    DOMElements.playerContainer.addEventListener('mouseup', (e) => {
+    this._timelineMouseUp = (e) => {
       if (!this.client.player) return;
       const video = this.client.player.getVideo();
       if (isGrabbing) {
@@ -194,9 +193,10 @@ export class FineTimeControls extends EventEmitter {
         }
       }
       isGrabbing = false;
-    }, true);
+    };
+    DOMElements.playerContainer.addEventListener('mouseup', this._timelineMouseUp, true);
 
-    DOMElements.playerContainer.addEventListener('mousemove', (e) => {
+    this._timelineMouseMove = (e) => {
       if (!this.client.player) return;
       const video = this.client.player.getVideo();
       if (isGrabbing) {
@@ -205,7 +205,8 @@ export class FineTimeControls extends EventEmitter {
         this.client.currentTime = time;
         this.client.updateTime(time);
       }
-    });
+    };
+    DOMElements.playerContainer.addEventListener('mousemove', this._timelineMouseMove);
   }
 
   onAnalyzerFrameProcessed(time, isSpeechProb, interpolated = 0) {
@@ -286,6 +287,19 @@ export class FineTimeControls extends EventEmitter {
     clearTimeout(this.closeTimeout);
     this._resizeObserver?.disconnect();
     this._resizeObserver = null;
+
+    if (this._timelineMouseDown) {
+      this.ui.timelineTicks.removeEventListener('mousedown', this._timelineMouseDown);
+      this._timelineMouseDown = null;
+    }
+    if (this._timelineMouseUp) {
+      DOMElements.playerContainer.removeEventListener('mouseup', this._timelineMouseUp, true);
+      this._timelineMouseUp = null;
+    }
+    if (this._timelineMouseMove) {
+      DOMElements.playerContainer.removeEventListener('mousemove', this._timelineMouseMove);
+      this._timelineMouseMove = null;
+    }
   }
 
   renderTicks(duration, maxTime, minTime) {
