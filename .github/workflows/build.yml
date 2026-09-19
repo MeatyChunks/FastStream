@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - build/firefox-performance-artifact-20260919
     tags:
       - "v*.*.*"
       - "V*.*.*"
