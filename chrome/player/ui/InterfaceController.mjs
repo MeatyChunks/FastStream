@@ -958,6 +958,7 @@ export class InterfaceController {
 
   destroy() {
     this.fineTimeControls.destroy();
+    this.subtitlesManager.destroy();
     this.shouldRunProgressLoop = false;
     clearTimeout(this.hideControlBarTimeout);
     // Clean up dynamic drag handlers if destroy runs mid-drag (idempotent).
