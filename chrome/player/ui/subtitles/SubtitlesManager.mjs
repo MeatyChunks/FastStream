@@ -312,9 +312,11 @@ export class SubtitlesManager extends EventEmitter {
       e.stopPropagation();
     });
 
-    window.addEventListener('resize', () => {
+    this._boundResize = () => {
+      this._layoutDirty = true;
       this.checkTrackBounds();
-    });
+    };
+    window.addEventListener('resize', this._boundResize);
 
     DOMElements.subtitlesMenu.addEventListener('mousedown', (e) => {
       e.stopPropagation();
@@ -734,6 +736,14 @@ export class SubtitlesManager extends EventEmitter {
     if (this._layoutDirty) {
       this.checkTrackBounds();
       this._layoutDirty = false;
+    }
+  }
+
+  destroy() {
+    this.subtitleSyncer.stop();
+    if (this._boundResize) {
+      window.removeEventListener('resize', this._boundResize);
+      this._boundResize = null;
     }
   }
 
