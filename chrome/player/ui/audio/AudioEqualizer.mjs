@@ -16,6 +16,8 @@ export class AudioEqualizer extends AbstractAudioModule {
     this.postAnalyzer = null;
     this.equalizerDbResponse = null;
     this.renderCache = {};
+    this._geometryVersion = 0;
+    this._geometryObserver = null;
 
     this.setupUI();
   }
@@ -77,6 +79,13 @@ export class AudioEqualizer extends AbstractAudioModule {
 
     this.ui.equalizerNodes = WebUtils.create('div', null, 'equalizer_nodes');
     this.ui.equalizer.appendChild(this.ui.equalizerNodes);
+
+    if (window.ResizeObserver) {
+      this._geometryObserver = new ResizeObserver(() => {
+        this._geometryVersion++;
+      });
+      this._geometryObserver.observe(this.ui.equalizerNodes);
+    }
 
     this.ui.zeroLineNode = WebUtils.create('div', null, 'zero_line_node');
     this.ui.equalizerNodes.appendChild(this.ui.zeroLineNode);
@@ -358,6 +367,8 @@ export class AudioEqualizer extends AbstractAudioModule {
       this.ui.equalizerNodes.appendChild(el);
 
       let isDragging = false;
+      let cachedRect = null;
+      let cachedGeometryVersion = -1;
 
       const updateTooltip = (x, y) => {
         if (y < 40) {
@@ -383,8 +394,12 @@ export class AudioEqualizer extends AbstractAudioModule {
 
       const mouseMove = (e) => {
         if (!isDragging) return;
-        const x = e.clientX - this.ui.equalizerNodes.getBoundingClientRect().left;
-        const y = e.clientY - this.ui.equalizerNodes.getBoundingClientRect().top;
+        if (!cachedRect || cachedGeometryVersion !== this._geometryVersion) {
+          cachedRect = this.ui.equalizerNodes.getBoundingClientRect();
+          cachedGeometryVersion = this._geometryVersion;
+        }
+        const x = e.clientX - cachedRect.left;
+        const y = e.clientY - cachedRect.top;
 
         const newXPercent = Utils.clamp(x / this.ui.equalizerNodes.clientWidth * 100, 0, 100);
         const newYPercent = Utils.clamp(y / this.ui.equalizerNodes.clientHeight * 100, 0, 100);
@@ -411,6 +426,8 @@ export class AudioEqualizer extends AbstractAudioModule {
 
       const mouseUp = (e) => {
         isDragging = false;
+        cachedRect = null;
+        cachedGeometryVersion = -1;
 
         DOMElements.playerContainer.removeEventListener('mousemove', mouseMove);
         DOMElements.playerContainer.removeEventListener('mouseup', mouseUp);
@@ -420,6 +437,8 @@ export class AudioEqualizer extends AbstractAudioModule {
         if (isDragging) return;
         isDragging = true;
         e.stopPropagation();
+        cachedRect = this.ui.equalizerNodes.getBoundingClientRect();
+        cachedGeometryVersion = this._geometryVersion;
         DOMElements.playerContainer.addEventListener('mousemove', mouseMove);
         DOMElements.playerContainer.addEventListener('mouseup', mouseUp);
       });
