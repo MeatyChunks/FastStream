@@ -146,6 +146,9 @@ export class FastStreamClient extends EventEmitter {
     this.sourceChange = null;
     this.previewPlayerSetup = null;
     this.customChapters = null;
+    this.destroyed = false;
+    this._destroyPromise = null;
+    this._initHookInterval = null;
     this.subtitleTimelineOffset = 0;
     this.saveSeek = true;
     this.pastSeeks = [];
@@ -300,15 +303,29 @@ export class FastStreamClient extends EventEmitter {
    * Destroys the client and cleans up resources.
    */
   destroy() {
+    if (this._destroyPromise) return this._destroyPromise;
+
     this.destroyed = true;
-    this.resetPlayer();
-    this.downloadManager.destroy();
     this.videoAnalyzer.destroy();
+
+    // resetPlayer performs its synchronous media teardown before its final await.
+    // Let it own DownloadManager destruction so storage close cannot race reset().
+    const resetPromise = this.resetPlayer({destroyDownloads: true});
+
     this.interfaceController.destroy();
     if (this.progressMemory) {
       this.progressMemory.destroy();
       this.progressMemory = null;
     }
+    if (this._initHookInterval) {
+      clearInterval(this._initHookInterval);
+      this._initHookInterval = null;
+    }
+
+    this._destroyPromise = Promise.resolve(resetPromise).catch((e) => {
+      console.error('FastStream teardown failed', e);
+    });
+    return this._destroyPromise;
   }
 
   /**
@@ -777,27 +794,34 @@ export class FastStreamClient extends EventEmitter {
    * @return {Promise<void>}
    */
   async buildPreviewPlayer() {
+    if (this.destroyed || !this.player) return;
+
     const source = this.player.getSource();
-    if (!source) {
-      return;
-    }
+    if (!source) return;
+
+    const isStale = () => {
+      return this.destroyed || this.previewPlayer || this.player?.getSource() !== source;
+    };
 
     const previewPlayer = await this.playerLoader.createPlayer(source.mode, this, {
       isPreview: true,
     });
+    if (isStale()) {
+      previewPlayer.destroy();
+      return;
+    }
 
-    // check if its yt mode
     this.attachProcessorsToPlayer(previewPlayer);
 
     await previewPlayer.setup();
+    if (isStale()) {
+      previewPlayer.destroy();
+      return;
+    }
     this.bindPreviewPlayer(previewPlayer);
 
     await previewPlayer.setSource(source);
-
-    // The video being previewed can be torn down or replaced while its preview is still
-    // being built, and a preview of something that is no longer playing does not belong
-    // in the page.
-    if (this.previewPlayer || this.player?.getSource() !== source) {
+    if (isStale()) {
       previewPlayer.destroy();
       return;
     }
@@ -835,6 +859,8 @@ export class FastStreamClient extends EventEmitter {
    * @return {Promise<void>}
    */
   setSource(source) {
+    if (this.destroyed) return Promise.resolve();
+
     const run = () => this.setSourceInternal(source);
     const change = this.sourceChange ? this.sourceChange.then(run, run) : run();
 
@@ -855,6 +881,7 @@ export class FastStreamClient extends EventEmitter {
    */
   async setSourceInternal(source) {
     try {
+      if (this.destroyed) return;
       source = source.copy();
 
       let timeFromURL = null;
@@ -892,6 +919,11 @@ export class FastStreamClient extends EventEmitter {
 
       console.log('setSource', source);
       await this.resetPlayer();
+      if (this.destroyed) {
+        source.destroy();
+        return;
+      }
+
       this.source = source;
       this.subtitleTimelineOffset = 0;
 
@@ -904,17 +936,27 @@ export class FastStreamClient extends EventEmitter {
       }
 
       this.storageAvailable = await EnvUtils.getAvailableStorage();
+      if (this.destroyed || this.source !== source) return;
 
       const options = {};
       if (source.mode === PlayerModes.ACCELERATED_YT) {
         options.defaultClient = this.options.defaultYoutubeClient;
         options.forcedPlayerID = this.options.youtubePlayerID;
       }
-      this.player = await this.playerLoader.createPlayer(source.mode, this, options);
+      const player = await this.playerLoader.createPlayer(source.mode, this, options);
+      if (this.destroyed || this.source !== source) {
+        player.destroy();
+        return;
+      }
+      this.player = player;
 
-      await this.player.setup();
+      await player.setup();
+      if (this.destroyed || this.player !== player) {
+        player.destroy();
+        return;
+      }
 
-      this.bindPlayer(this.player);
+      this.bindPlayer(player);
 
       if (!this.initPromise) {
         this.initPromise = this.setupInitHook();
@@ -924,8 +966,12 @@ export class FastStreamClient extends EventEmitter {
       }
 
 
-      await this.player.setSource(source);
-      this.interfaceController.addVideo(this.player.getVideo());
+      await player.setSource(source);
+      if (this.destroyed || this.player !== player) {
+        player.destroy();
+        return;
+      }
+      this.interfaceController.addVideo(player.getVideo());
 
       if (EnvUtils.isWebAudioSupported()) {
         this.initiateWebAudio();
@@ -964,12 +1010,14 @@ export class FastStreamClient extends EventEmitter {
       }
 
       this.loadProgressData().then(async () => {
+        if (this.destroyed || this.player !== player) return;
         this.disableProgressSave = true;
 
         // Wait for the player to be ready
         if (this.initPromise) {
           await this.initPromise;
         }
+        if (this.destroyed || this.player !== player) return;
 
         if (timeFromURL) {
           this.setSeekSave(false);
@@ -1009,17 +1057,19 @@ export class FastStreamClient extends EventEmitter {
    */
   setupInitHook() {
     return new Promise((resolve) => {
-      let interval = 0;
-
       const hook = () => {
+        if (!this.context) return;
         if (!this.duration || !this.currentVideo || this.currentVideo.readyState === 0) return;
-        clearInterval(interval);
+
+        if (this._initHookInterval) {
+          clearInterval(this._initHookInterval);
+          this._initHookInterval = null;
+        }
         this.context.off(DefaultPlayerEvents.DURATIONCHANGE, hook);
         resolve();
       };
 
-      interval = setInterval(hook, 1000);
-
+      this._initHookInterval = setInterval(hook, 1000);
       this.context.on(DefaultPlayerEvents.DURATIONCHANGE, hook);
       hook();
     });
@@ -1343,9 +1393,14 @@ export class FastStreamClient extends EventEmitter {
    * Resets the player and all related state.
    * @return {Promise<void>}
    */
-  async resetPlayer() {
+  async resetPlayer({destroyDownloads = false} = {}) {
     const promises = [];
     this.lastTime = 0;
+
+    if (this._initHookInterval) {
+      clearInterval(this._initHookInterval);
+      this._initHookInterval = null;
+    }
 
     this.fragmentsStore = {};
     this.pastSeeks.length = 0;
@@ -1413,7 +1468,7 @@ export class FastStreamClient extends EventEmitter {
     this.audioAnalyzer.reset();
     this.frameExtractor.reset();
 
-    promises.push(this.downloadManager.reset());
+    promises.push(destroyDownloads ? this.downloadManager.destroy() : this.downloadManager.reset());
     this.interfaceController.reset();
 
     this.state.buffering = false;

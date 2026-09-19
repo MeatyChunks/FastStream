@@ -513,22 +513,62 @@
     return true;
   }
 
+  function stopOrphanedPlayer(iframe) {
+    try {
+      iframe.src = 'about:blank';
+      iframe.style.setProperty('display', 'none', 'important');
+    } catch (e) {
+      // iframe may be inaccessible
+    }
+  }
+
+  function restoreReplacedPlayer(replacedData) {
+    let domRestored = false;
+    try {
+      if (replacedData.softReplace) {
+        showSoft(replacedData.old);
+        if (replacedData.iframe.parentNode) {
+          replacedData.iframe.parentNode.removeChild(replacedData.iframe);
+          domRestored = true;
+        }
+      } else if (replacedData.iframe.parentNode) {
+        replacedData.iframe.parentNode.replaceChild(replacedData.old, replacedData.iframe);
+        domRestored = true;
+      }
+    } catch (e) {
+      // SPA navigation may have replaced or detached the original DOM.
+    }
+
+    if (!domRestored) {
+      stopOrphanedPlayer(replacedData.iframe);
+      showSoft(replacedData.old);
+    }
+
+    try {
+      removePauseListeners(replacedData.old, replacedData.watcher);
+    } catch (e) {
+      // watcher may already be cleaned up
+    }
+
+    try {
+      replacedData.resizeObserver?.disconnect();
+    } catch (e) {
+      // resizeObserver may already be disconnected
+    }
+  }
+
   function removePlayers() {
     MiniplayerCooldown = Date.now() + 1000;
     iframeMap.forEach((iframeObj) => {
-      unmakeMiniPlayer(iframeObj);
+      try {
+        unmakeMiniPlayer(iframeObj);
+      } catch (e) {
+        // SPA navigation may have already detached the miniplayer DOM.
+      }
+
       if (iframeObj.replacedData) {
         const replacedData = iframeObj.replacedData;
-        if (replacedData.softReplace) {
-          showSoft(replacedData.old);
-          replacedData.iframe.parentNode.removeChild(replacedData.iframe);
-        } else {
-          replacedData.iframe.parentNode.replaceChild(replacedData.old, replacedData.iframe);
-        }
-        removePauseListeners(replacedData.old, replacedData.watcher);
-
-        replacedData.resizeObserver.disconnect();
-
+        restoreReplacedPlayer(replacedData);
         iframeObj.replacedData = null;
 
         chrome.runtime.sendMessage({
@@ -541,15 +581,8 @@
     undoFillScreenIframe();
 
     replacedPlayerQueue.forEach((replacedData) => {
-      if (replacedData.softReplace) {
-        showSoft(replacedData.old);
-        replacedData.iframe.parentNode.removeChild(replacedData.iframe);
-      } else {
-        replacedData.iframe.parentNode.replaceChild(replacedData.old, replacedData.iframe);
-      }
-      removePauseListeners(replacedData.old, replacedData.watcher);
+      restoreReplacedPlayer(replacedData);
     });
-
     replacedPlayerQueue.length = 0;
 
     if (Activated) {

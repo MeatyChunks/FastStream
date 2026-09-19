@@ -24,6 +24,11 @@ export class SubtitlesManager extends EventEmitter {
     this.subtitleTrackListElements = [];
     this.subtitleTrackDisplayElements = [];
 
+    // Layout-dirty flag: checkTrackBounds() only needs to run when track
+    // layout actually changes (add/remove, opacity-flip, resize, subtitle-load).
+    // Set true initially so the first render computes bounds.
+    this._layoutDirty = true;
+
     this.settingsManager = new SubtitlesSettingsManager();
     this.settingsManager.on(SubtitlesSettingsManagerEvents.SETTINGS_CHANGED, this.onSettingsChanged.bind(this));
     this.settingsManager.loadSettings();
@@ -307,9 +312,11 @@ export class SubtitlesManager extends EventEmitter {
       e.stopPropagation();
     });
 
-    window.addEventListener('resize', () => {
+    this._boundResize = () => {
+      this._layoutDirty = true;
       this.checkTrackBounds();
-    });
+    };
+    window.addEventListener('resize', this._boundResize);
 
     DOMElements.subtitlesMenu.addEventListener('mousedown', (e) => {
       e.stopPropagation();
@@ -625,6 +632,7 @@ export class SubtitlesManager extends EventEmitter {
       const el = cachedElements[i];
       el.parentElement.remove();
       cachedElements.splice(i, 1);
+      this._layoutDirty = true;
     }
 
     // Add new elements
@@ -633,6 +641,7 @@ export class SubtitlesManager extends EventEmitter {
 
       cachedElements.push(trackContainer);
       DOMElements.subtitlesContainer.appendChild(wrapper);
+      this._layoutDirty = true;
     }
 
     // Update elements
@@ -672,16 +681,27 @@ export class SubtitlesManager extends EventEmitter {
       }
 
       if (!toAdd.length) {
+        const prevOpacity = trackContainer.style.opacity;
         trackContainer.style.opacity = 0;
+        if (prevOpacity !== '0') this._layoutDirty = true;
 
-        // Remove all children except one
+        // Remove all children except one. Cue changes can alter subtitle height even
+        // when visibility does not change, so invalidate bounds when the DOM changes.
         const fillerCue = trackContainer.children[0] || document.createElement('div');
+        const childrenChanged = trackContainer.children.length !== 1 ||
+          trackContainer.children[0] !== fillerCue;
         WebUtils.replaceChildrenPerformant(trackContainer, [fillerCue]);
         if (!fillerCue.textContent) fillerCue.textContent = '|';
+        if (childrenChanged) this._layoutDirty = true;
       } else {
+        const prevOpacity = trackContainer.style.opacity;
         trackContainer.style.opacity = '';
+        if (prevOpacity !== '') this._layoutDirty = true;
 
+        const childrenChanged = trackContainer.children.length !== toAdd.length ||
+          toAdd.some((cue, cueIndex) => trackContainer.children[cueIndex] !== cue);
         WebUtils.replaceChildrenPerformant(trackContainer, toAdd);
+        if (childrenChanged) this._layoutDirty = true;
         subtitlesVisible++;
       }
     }
@@ -710,7 +730,21 @@ export class SubtitlesManager extends EventEmitter {
       DOMElements.subtitlesContainer.style.display = 'none';
     }
 
-    this.checkTrackBounds();
+    // Only recompute track bounds when layout actually changed (add/remove,
+    // opacity-flip) or an external event (resize/subtitle-load via addTrack)
+    // set the dirty flag. Avoids 60fps forced reflow from rAF render path.
+    if (this._layoutDirty) {
+      this.checkTrackBounds();
+      this._layoutDirty = false;
+    }
+  }
+
+  destroy() {
+    this.subtitleSyncer.stop();
+    if (this._boundResize) {
+      window.removeEventListener('resize', this._boundResize);
+      this._boundResize = null;
+    }
   }
 
   mediaInfoSet() {
