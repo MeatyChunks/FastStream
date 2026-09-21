@@ -16,6 +16,9 @@ export class ProgressBar extends EventEmitter {
     this.skipSegmentsCache = [];
     this.chapterCache = [];
     this.hasShownSkip = false;
+    this._skipLayoutDirty = true;
+    this._chapterLayoutDirty = true;
+    this._activeSkipSegmentIndex = -1;
     this.isSeeking = false;
     this.isMouseOverProgressbar = false;
 
@@ -145,6 +148,9 @@ export class ProgressBar extends EventEmitter {
     this.progressCacheAudio = [];
     this.skipSegments = [];
     this.hasShownSkip = false;
+    this._skipLayoutDirty = true;
+    this._chapterLayoutDirty = true;
+    this._activeSkipSegmentIndex = -1;
   }
 
   collectProgressbarData(fragments) {
@@ -315,17 +321,15 @@ export class ProgressBar extends EventEmitter {
     };
   }
 
-  updateSkipSegments() {
-    // DOMElements.skipSegmentsContainer.replaceChildren();
+  invalidateSkipLayout() {
+    this._skipLayoutDirty = true;
+    this._chapterLayoutDirty = true;
+    this._activeSkipSegmentIndex = -1;
+  }
 
+  rebuildSkipLayout(duration) {
     const introMatch = this.client.videoAnalyzer.getIntro();
     const outroMatch = this.client.videoAnalyzer.getOutro();
-
-    const duration = this.client.duration;
-    if (!duration) {
-      return;
-    }
-
     const skipSegments = [];
 
     if (introMatch) {
@@ -356,42 +360,89 @@ export class ProgressBar extends EventEmitter {
       });
     });
 
-    let currentSegment = null;
-    const time = this.client.currentTime;
-
-    if (this.skipSegmentsCache.length > skipSegments.length) {
-      // Remove elements
-      for (let i = skipSegments.length; i < this.skipSegmentsCache.length; i++) {
-        this.skipSegmentsCache[i].remove();
-      }
-      this.skipSegmentsCache.length = skipSegments.length;
-    } else if (this.skipSegmentsCache.length < skipSegments.length) {
-      // Add elements
-      for (let i = this.skipSegmentsCache.length; i < skipSegments.length; i++) {
-        const segmentElement = document.createElement('div');
-        DOMElements.skipSegmentsContainer.appendChild(segmentElement);
-        this.skipSegmentsCache.push(segmentElement);
-      }
+    while (this.skipSegmentsCache.length > skipSegments.length) {
+      this.skipSegmentsCache.pop().remove();
     }
-
+    while (this.skipSegmentsCache.length < skipSegments.length) {
+      const segmentElement = document.createElement('div');
+      DOMElements.skipSegmentsContainer.appendChild(segmentElement);
+      this.skipSegmentsCache.push(segmentElement);
+    }
 
     skipSegments.forEach((segment, i) => {
       const segmentElement = this.skipSegmentsCache[i];
       segmentElement.className = 'skip_segment ' + segment.class;
       segmentElement.style.left = segment.startTime / duration * 100 + '%';
       segmentElement.style.width = (segment.endTime - segment.startTime) / duration * 100 + '%';
-
-      if (segment.color) {
-        segmentElement.style.backgroundColor = segment.color;
-      }
-
-      if (!currentSegment && time >= segment.startTime && time < segment.endTime) {
-        currentSegment = segment;
-        segmentElement.classList.add('active');
-      }
+      segmentElement.style.backgroundColor = segment.color || '';
     });
 
     this.skipSegments = skipSegments;
+    this._skipLayoutDirty = false;
+    this._activeSkipSegmentIndex = -1;
+  }
+
+  rebuildChapterLayout(duration) {
+    const chapters = [];
+    this.client.chapters.forEach((chapter) => {
+      if (chapter.startTime > 0) {
+        chapters.push({
+          ...chapter,
+          startTime: Utils.clamp(chapter.startTime, 0, duration),
+          endTime: Utils.clamp(chapter.endTime, 0, duration),
+        });
+      }
+    });
+
+    while (this.chapterCache.length > chapters.length) {
+      this.chapterCache.pop().remove();
+    }
+    while (this.chapterCache.length < chapters.length) {
+      const chapterElement = document.createElement('div');
+      DOMElements.skipSegmentsContainer.appendChild(chapterElement);
+      this.chapterCache.push(chapterElement);
+    }
+
+    chapters.forEach((chapter, i) => {
+      const chapterElement = this.chapterCache[i];
+      chapterElement.className = 'chapter';
+      chapterElement.style.left = chapter.startTime / duration * 100 + '%';
+    });
+
+    this._chapterLayoutDirty = false;
+  }
+
+  updateActiveSkipSegment(time) {
+    const activeIndex = this.skipSegments.findIndex((segment) => {
+      return segment.startTime <= time && segment.endTime > time;
+    });
+
+    if (activeIndex !== this._activeSkipSegmentIndex) {
+      if (this._activeSkipSegmentIndex >= 0) {
+        this.skipSegmentsCache[this._activeSkipSegmentIndex]?.classList.remove('active');
+      }
+      if (activeIndex >= 0) {
+        this.skipSegmentsCache[activeIndex]?.classList.add('active');
+      }
+      this._activeSkipSegmentIndex = activeIndex;
+    }
+
+    return activeIndex >= 0 ? this.skipSegments[activeIndex] : null;
+  }
+
+  updateSkipSegments() {
+    const duration = this.client.duration;
+    if (!duration) return;
+
+    if (this._skipLayoutDirty) {
+      this.rebuildSkipLayout(duration);
+    }
+    if (this._chapterLayoutDirty) {
+      this.rebuildChapterLayout(duration);
+    }
+
+    const time = this.client.currentTime;
+    const currentSegment = this.updateActiveSkipSegment(time);
 
     if (currentSegment) {
       DOMElements.skipButton.style.display = '';
@@ -403,7 +454,7 @@ export class ProgressBar extends EventEmitter {
       DOMElements.skipButton.style.display = 'none';
     }
 
-    if (this.client.options.autoplayNext && this.client.hasNextVideo() && (currentSegment?.class === 'outro' || Math.ceil(duration - time) <= 10)) { // Outro
+    if (this.client.options.autoplayNext && this.client.hasNextVideo() && (currentSegment?.class === 'outro' || Math.ceil(duration - time) <= 10)) {
       DOMElements.nextVideoBannerButton.style.display = '';
       DOMElements.nextVideoBannerButton.textContent = Localize.getMessage('player_nextvideoin', [Math.ceil(duration - time)]);
       DOMElements.skipButton.classList.add('shiftup');
@@ -425,38 +476,6 @@ export class ProgressBar extends EventEmitter {
     } else {
       this.hasShownSkip = false;
     }
-
-    const chapters = [];
-    this.client.chapters.forEach((chapter) => {
-      if (chapter.startTime > 0) {
-        chapters.push({
-          ...chapter,
-          startTime: Utils.clamp(chapter.startTime, 0, duration),
-          endTime: Utils.clamp(chapter.endTime, 0, duration),
-        });
-      }
-    });
-
-    if (this.chapterCache.length > chapters.length) {
-      // Remove elements
-      for (let i = chapters.length; i < this.chapterCache.length; i++) {
-        this.chapterCache[i].remove();
-      }
-      this.chapterCache.length = chapters.length;
-    } else if (this.chapterCache.length < chapters.length) {
-      // Add elements
-      for (let i = this.chapterCache.length; i < chapters.length; i++) {
-        const chapterElement = document.createElement('div');
-        DOMElements.skipSegmentsContainer.appendChild(chapterElement);
-        this.chapterCache.push(chapterElement);
-      }
-    }
-
-    chapters.forEach((chapter, i) => {
-      const chapterElement = this.chapterCache[i];
-      chapterElement.classList.add('chapter');
-      chapterElement.style.left = chapter.startTime / duration * 100 + '%';
-    });
   }
 
   skipSegment() {
