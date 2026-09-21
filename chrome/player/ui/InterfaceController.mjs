@@ -50,6 +50,7 @@ export class InterfaceController {
     this._boundSkipSegment = this.skipSegment.bind(this);
     this._boundProgressLoop = this.progressLoop.bind(this);
     this._fragmentUpdateFrame = null;
+    this._markerUpdateFrame = null;
     this._activeChapterIndex = -1;
     this._activeChapterName = null;
 
@@ -286,7 +287,12 @@ export class InterfaceController {
   }
 
   updateMarkers() {
-    this.progressBar.updateMarkers();
+    if (this._markerUpdateFrame !== null) return;
+
+    this._markerUpdateFrame = window.requestAnimationFrame(() => {
+      this._markerUpdateFrame = null;
+      this.progressBar.updateMarkers();
+    });
   }
 
   updateFragmentsLoaded() {
@@ -983,6 +989,10 @@ export class InterfaceController {
     if (this._fragmentUpdateFrame !== null) {
       window.cancelAnimationFrame(this._fragmentUpdateFrame);
       this._fragmentUpdateFrame = null;
+    }
+    if (this._markerUpdateFrame !== null) {
+      window.cancelAnimationFrame(this._markerUpdateFrame);
+      this._markerUpdateFrame = null;
     }
     this.shouldRunProgressLoop = false;
     clearTimeout(this.hideControlBarTimeout);
