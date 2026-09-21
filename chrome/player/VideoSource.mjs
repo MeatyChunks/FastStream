@@ -50,6 +50,7 @@ export class VideoSource {
     this.headers = this.filterHeaders(this.headers);
     this.defaultLevelInfo = null;
     this.loadedFromArchive = false;
+    this.sourceVariants = [];
   }
 
   /**
@@ -139,6 +140,7 @@ export class VideoSource {
     newsource.identifier = this.identifier;
     newsource.defaultLevelInfo = this.defaultLevelInfo;
     newsource.loadedFromArchive = this.loadedFromArchive;
+    newsource.sourceVariants = this.sourceVariants.map((variant) => ({...variant}));
     newsource.headers = {...this.headers};
     return newsource;
   }
