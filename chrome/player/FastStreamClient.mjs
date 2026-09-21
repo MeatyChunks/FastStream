@@ -1823,6 +1823,67 @@ export class FastStreamClient extends EventEmitter {
   }
 
   /**
+   * Gets alternate URLs exposed by the page's original video element.
+   * These are whole-source quality choices, not fragment levels from the active player.
+   * @return {Array<Object>}
+   */
+  getSourceVariants() {
+    return this.source?.sourceVariants || [];
+  }
+
+  /**
+   * Returns whether a page-provided source variant is the URL currently playing.
+   * @param {Object} variant
+   * @return {boolean}
+   */
+  isSourceVariantActive(variant) {
+    if (!variant?.url || !this.source?.url) return false;
+    try {
+      return new URL(variant.url, window.location.href).href ===
+        new URL(this.source.url, window.location.href).href;
+    } catch (e) {
+      return variant.url === this.source.url;
+    }
+  }
+
+  /**
+   * Switches between whole-file/page-provided source variants while preserving the
+   * user's playback state. This deliberately reuses the current FastStream player mode
+   * so an accelerated MP4 source stays accelerated rather than falling back to <video>.
+   * @param {Object} variant
+   * @return {Promise<void>}
+   */
+  async setSourceVariant(variant) {
+    if (!variant?.url || !this.source || this.isSourceVariantActive(variant)) return;
+
+    const currentTime = this.currentTime;
+    const wasPlaying = !this.paused;
+    const source = this.source.copy();
+    source.url = variant.url;
+    source.identifier = source.url.split(/[?#]/)[0];
+    source.defaultLevelInfo = null;
+
+    this.setSeekSave(false);
+    try {
+      await this.setSource(source);
+      if (!this.player) return;
+
+      if (Number.isFinite(currentTime) && currentTime > 0) {
+        const maxTime = this.duration > 0 ? Math.max(0, this.duration - 0.05) : currentTime;
+        this.currentTime = Math.min(currentTime, maxTime);
+      }
+
+      if (wasPlaying) {
+        await this.play();
+      } else {
+        await this.pause();
+      }
+    } finally {
+      this.setSeekSave(true);
+    }
+  }
+
+  /**
    * Gets available audio quality levels.
    * @return {Map}
    */
