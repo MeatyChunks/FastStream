@@ -63,9 +63,11 @@ test('seek and replacement UI remain frame-driven while caching layout work', as
   const contentSource = await readSource('chrome/content.js');
 
   assert.match(progressSource, /_progressGeometry/);
+  assert.match(progressSource, /previewWidth/);
   assert.match(progressSource, /renderProgressbarPreview/);
   assert.match(progressSource, /dragFrame = window\.requestAnimationFrame/);
   assert.match(interfaceSource, /_fragmentUpdateFrame/);
+  assert.match(interfaceSource, /_markerUpdateFrame/);
   assert.match(contentSource, /replacedPlayersFrame = window\.requestAnimationFrame/);
   assert.match(contentSource, /function querySelectorIncludingShadows/);
 });
