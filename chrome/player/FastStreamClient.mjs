@@ -915,6 +915,8 @@ export class FastStreamClient extends EventEmitter {
       }
 
 
+      this.applyPreferredSourceVariant(source);
+
       const autoPlay = this.options.autoPlay;
 
       console.log('setSource', source);
@@ -1832,6 +1834,26 @@ export class FastStreamClient extends EventEmitter {
   }
 
   /**
+   * Applies the configured default quality to page-provided source variants on initial
+   * load. Explicit quality-picker selections bypass this so the setting never fights
+   * the user's current choice.
+   * @param {VideoSource} source
+   */
+  applyPreferredSourceVariant(source) {
+    if (!source || source.sourceVariantExplicit || source.sourceVariants?.length < 2) return;
+
+    const chosen = this.levelManager.pickSourceVariant(
+        source.sourceVariants,
+        this.levelManager.getDesiredVideoHeight(),
+        source.url,
+    );
+    if (!chosen?.url) return;
+
+    source.url = chosen.url;
+    source.identifier = source.url.split(/[?#]/)[0];
+  }
+
+  /**
    * Returns whether a page-provided source variant is the URL currently playing.
    * @param {Object} variant
    * @return {boolean}
@@ -1862,6 +1884,7 @@ export class FastStreamClient extends EventEmitter {
     source.url = variant.url;
     source.identifier = source.url.split(/[?#]/)[0];
     source.defaultLevelInfo = null;
+    source.sourceVariantExplicit = true;
 
     this.setSeekSave(false);
     try {
