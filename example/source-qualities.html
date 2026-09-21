@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FastStream HTML Source Quality Test</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, sans-serif;
+      background: #111;
+      color: #eee;
+    }
+    main {
+      width: min(960px, calc(100% - 32px));
+      margin: 32px auto;
+    }
+    video {
+      display: block;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: #000;
+    }
+    code {
+      background: #222;
+      padding: 2px 5px;
+      border-radius: 4px;
+    }
+    .status {
+      margin-top: 16px;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>HTML source quality test</h1>
+    <p>
+      Enable FastStream on this page. The quality picker should expose
+      <code>1080p</code>, <code>720p</code>, and <code>480p</code>.
+      Initial selection should follow FastStream's preferred/default quality.
+      A manual picker choice should remain selected.
+    </p>
+
+    <video id="quality-test-video" controls preload="metadata">
+      <source
+        src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4?fs-quality=1080"
+        type="video/mp4"
+        data-quality="1080p"
+        data-height="1080"
+        data-width="1920">
+      <source
+        src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4?fs-quality=720"
+        type="video/mp4"
+        data-quality="720p"
+        data-height="720"
+        data-width="1280">
+      <source
+        src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4?fs-quality=480"
+        type="video/mp4"
+        data-quality="480p"
+        data-height="480"
+        data-width="854">
+    </video>
+
+    <div id="status" class="status">Waiting for metadata…</div>
+  </main>
+
+  <script>
+    const video = document.getElementById('quality-test-video');
+    const status = document.getElementById('status');
+
+    const renderStatus = () => {
+      const sources = Array.from(video.querySelectorAll('source')).map((source) => {
+        return `${source.dataset.quality}: ${source.src}`;
+      });
+      status.textContent = [
+        `currentSrc: ${video.currentSrc || '(none)'}`,
+        `intrinsic: ${video.videoWidth || '?'}x${video.videoHeight || '?'}`,
+        '',
+        ...sources,
+      ].join('\n');
+    };
+
+    video.addEventListener('loadedmetadata', renderStatus);
+    video.addEventListener('loadstart', renderStatus);
+    renderStatus();
+  </script>
+</body>
+</html>
