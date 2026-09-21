@@ -87,3 +87,66 @@ test('page video source variants flow into the quality picker and preserve playb
   assert.match(qualitySource, /sourceQualityChanged/);
   assert.match(qualitySource, /formatSourceVariantLabel/);
 });
+
+
+test('page source variants respect default quality without overriding explicit picks', async () => {
+  const levelSource = await readSource('chrome/player/players/LevelManager.mjs');
+  const videoSource = await readSource('chrome/player/VideoSource.mjs');
+  const clientSource = await readSource('chrome/player/FastStreamClient.mjs');
+
+  assert.match(levelSource, /pickSourceVariant\(variants, desiredHeight = null, currentURL = null\)/);
+  assert.match(levelSource, /this\.getDesiredVideoHeight\(\)/);
+  assert.match(clientSource, /applyPreferredSourceVariant\(source\)/);
+  assert.match(clientSource, /source\.sourceVariantExplicit/);
+  assert.match(clientSource, /source\.sourceVariantExplicit = true/);
+  assert.match(videoSource, /newsource\.sourceVariantExplicit = this\.sourceVariantExplicit/);
+});
+
+test('static timeline segments are cached while dynamic controls remain frame-driven', async () => {
+  const progressSource = await readSource('chrome/player/ui/ProgressBar.mjs');
+  const interfaceSource = await readSource('chrome/player/ui/InterfaceController.mjs');
+
+  assert.match(progressSource, /_skipLayoutDirty/);
+  assert.match(progressSource, /rebuildSkipLayout\(duration\)/);
+  assert.match(progressSource, /rebuildChapterLayout\(duration\)/);
+  assert.match(progressSource, /_nextBannerSeconds/);
+  assert.match(interfaceSource, /updateSkipSegments\(layoutChanged = false\)/);
+  assert.match(interfaceSource, /this\.progressBar\.invalidateSkipLayout\(\)/);
+});
+
+test('fine timeline drag is display-frame coalesced and caches width', async () => {
+  const source = await readSource('chrome/player/ui/FineTimeControls.mjs');
+
+  assert.match(source, /_timelineDragFrame/);
+  assert.match(source, /_timelineWidth/);
+  assert.match(source, /this\._timelineDragFrame = window\.requestAnimationFrame/);
+  assert.doesNotMatch(source, /delta \/ this\.ui\.timelineTicks\.clientWidth/);
+});
+
+test('background preview frame encoding avoids synchronous base64 round trips', async () => {
+  const source = await readSource('chrome/player/modules/analyzer/PreviewFrameExtractor.mjs');
+
+  assert.match(source, /extractorCanvas\.toBlob/);
+  assert.match(source, /pendingFrameEncodes/);
+  assert.doesNotMatch(source, /atob\(/);
+});
+
+test('download housekeeping is throttled without changing buffer targets', async () => {
+  const clientSource = await readSource('chrome/player/FastStreamClient.mjs');
+  const managerSource = await readSource('chrome/player/network/DownloadManager.mjs');
+
+  assert.match(clientSource, /updateHasDownloadSpace\(force = false\)/);
+  assert.match(clientSource, /now - lastUpdate < 5000/);
+  assert.match(clientSource, /bufferAhead: 300/);
+  assert.match(clientSource, /bufferBehind: 20/);
+  assert.match(managerSource, /while \(this\.queue\.length > 0 && this\.queue\[0\]\.status !== DownloadStatus\.ENQUEUED\)/);
+});
+
+test('HTML source quality example covers preferred resolution choices', async () => {
+  const source = await readSource('example/source-qualities.html');
+
+  assert.match(source, /data-quality="1080p"/);
+  assert.match(source, /data-quality="720p"/);
+  assert.match(source, /data-quality="480p"/);
+  assert.match(source, /preferred\/default quality/);
+});
