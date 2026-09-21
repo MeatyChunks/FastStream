@@ -336,7 +336,10 @@ export class InterfaceController {
     }
   }
 
-  updateSkipSegments() {
+  updateSkipSegments(layoutChanged = false) {
+    if (layoutChanged) {
+      this.progressBar.invalidateSkipLayout();
+    }
     this.progressBar.updateSkipSegments();
   }
 
@@ -1003,6 +1006,7 @@ export class InterfaceController {
 
   durationChanged() {
     const duration = this.client.duration;
+    this.progressBar.invalidateSkipLayout();
     if (duration < (5 * 60 * this.client.playbackRate) || this.fineTimeControls.started) {
       this.runProgressLoop();
     } else {
