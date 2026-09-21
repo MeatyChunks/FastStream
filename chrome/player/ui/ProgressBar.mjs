@@ -45,6 +45,10 @@ export class ProgressBar extends EventEmitter {
         left: rect.left,
         top: rect.top,
         width: rect.width || DOMElements.progressContainer.clientWidth,
+        previewWidth: Math.max(
+            DOMElements.seekPreviewVideo.clientWidth,
+            DOMElements.seekPreview.clientWidth,
+        ),
       };
     }
     return this._progressGeometry;
@@ -131,6 +135,8 @@ export class ProgressBar extends EventEmitter {
     if (window.ResizeObserver) {
       this._geometryObserver = new ResizeObserver(this._boundInvalidateGeometry);
       this._geometryObserver.observe(DOMElements.progressContainer);
+      this._geometryObserver.observe(DOMElements.seekPreview);
+      this._geometryObserver.observe(DOMElements.seekPreviewVideo);
     }
     window.addEventListener('resize', this._boundInvalidateGeometry);
 
@@ -529,7 +535,7 @@ export class ProgressBar extends EventEmitter {
     text += StringUtils.formatTime(time);
     DOMElements.seekPreviewText.innerText = text;
 
-    const maxWidth = Math.max(DOMElements.seekPreviewVideo.clientWidth, DOMElements.seekPreview.clientWidth);
+    const maxWidth = geometry.previewWidth;
 
     let nudgeAmount = 0;
 
