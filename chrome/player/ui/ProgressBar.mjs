@@ -19,6 +19,9 @@ export class ProgressBar extends EventEmitter {
     this._skipLayoutDirty = true;
     this._chapterLayoutDirty = true;
     this._activeSkipSegmentIndex = -1;
+    this._skipButtonVisible = false;
+    this._nextBannerVisible = false;
+    this._nextBannerSeconds = null;
     this.isSeeking = false;
     this.isMouseOverProgressbar = false;
 
@@ -157,6 +160,9 @@ export class ProgressBar extends EventEmitter {
     this._skipLayoutDirty = true;
     this._chapterLayoutDirty = true;
     this._activeSkipSegmentIndex = -1;
+    this._skipButtonVisible = false;
+    this._nextBannerVisible = false;
+    this._nextBannerSeconds = null;
   }
 
   collectProgressbarData(fragments) {
@@ -450,26 +456,35 @@ export class ProgressBar extends EventEmitter {
     const time = this.client.currentTime;
     const currentSegment = this.updateActiveSkipSegment(time);
 
-    if (currentSegment) {
-      DOMElements.skipButton.style.display = '';
+    const shouldShowSkip = !!currentSegment;
+    if (shouldShowSkip !== this._skipButtonVisible) {
+      this._skipButtonVisible = shouldShowSkip;
+      DOMElements.skipButton.style.display = shouldShowSkip ? '' : 'none';
+      DOMElements.progressContainer.classList.toggle('skip_freeze', shouldShowSkip);
+    }
+    if (currentSegment && DOMElements.skipButton.textContent !== currentSegment.skipText) {
       DOMElements.skipButton.textContent = currentSegment.skipText;
       DOMElements.skipButton.ariaLabel = currentSegment.skipText;
-      DOMElements.progressContainer.classList.add('skip_freeze');
-    } else {
-      DOMElements.progressContainer.classList.remove('skip_freeze');
-      DOMElements.skipButton.style.display = 'none';
     }
 
-    if (this.client.options.autoplayNext && this.client.hasNextVideo() && (currentSegment?.class === 'outro' || Math.ceil(duration - time) <= 10)) {
-      DOMElements.nextVideoBannerButton.style.display = '';
-      DOMElements.nextVideoBannerButton.textContent = Localize.getMessage('player_nextvideoin', [Math.ceil(duration - time)]);
-      DOMElements.skipButton.classList.add('shiftup');
-    } else {
-      DOMElements.nextVideoBannerButton.style.display = 'none';
-      DOMElements.skipButton.classList.remove('shiftup');
+    const secondsRemaining = Math.ceil(duration - time);
+    const shouldShowNext = this.client.options.autoplayNext &&
+      this.client.hasNextVideo() &&
+      (currentSegment?.class === 'outro' || secondsRemaining <= 10);
+
+    if (shouldShowNext !== this._nextBannerVisible) {
+      this._nextBannerVisible = shouldShowNext;
+      DOMElements.nextVideoBannerButton.style.display = shouldShowNext ? '' : 'none';
+      DOMElements.skipButton.classList.toggle('shiftup', shouldShowNext);
+      if (!shouldShowNext) this._nextBannerSeconds = null;
+    }
+    if (shouldShowNext && secondsRemaining !== this._nextBannerSeconds) {
+      this._nextBannerSeconds = secondsRemaining;
+      DOMElements.nextVideoBannerButton.textContent =
+        Localize.getMessage('player_nextvideoin', [secondsRemaining]);
     }
 
-    if (DOMElements.skipButton.style.display !== 'none' || DOMElements.nextVideoBannerButton.style.display !== 'none') {
+    if (this._skipButtonVisible || this._nextBannerVisible) {
       if (!this.hasShownSkip) {
         this.hasShownSkip = true;
 
