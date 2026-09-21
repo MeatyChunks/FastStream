@@ -15,6 +15,7 @@ export class FrameHolder {
     this.isPlayer = false;
     this.trackedSubtitles = [];
     this.trackedSources = [];
+    this.videoSourceVariants = [];
     // Set while a site integration is putting together the source for this frame, along
     // with the sources that were detected in the ordinary way in the meantime.
     this.claimed = false;
