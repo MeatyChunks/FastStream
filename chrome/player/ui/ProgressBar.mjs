@@ -28,6 +28,7 @@ export class ProgressBar extends EventEmitter {
     this._geometryObserver = null;
     this._hoverFrame = null;
     this._hoverClientX = 0;
+    this._boundInvalidateGeometry = this.invalidateGeometry.bind(this);
   }
 
   invalidateGeometry() {
@@ -125,10 +126,10 @@ export class ProgressBar extends EventEmitter {
     DOMElements.progressContainer.addEventListener('mousemove', this.onProgressbarMouseMove.bind(this));
 
     if (window.ResizeObserver) {
-      this._geometryObserver = new ResizeObserver(() => this.invalidateGeometry());
+      this._geometryObserver = new ResizeObserver(this._boundInvalidateGeometry);
       this._geometryObserver.observe(DOMElements.progressContainer);
     }
-    window.addEventListener('resize', this.invalidateGeometry.bind(this));
+    window.addEventListener('resize', this._boundInvalidateGeometry);
 
     DOMElements.nextVideoBannerButton.addEventListener('click', (e) => {
       this.client.nextVideo();
@@ -680,6 +681,7 @@ export class ProgressBar extends EventEmitter {
     }
     this._geometryObserver?.disconnect();
     this._geometryObserver = null;
+    window.removeEventListener('resize', this._boundInvalidateGeometry);
   }
 
   showPreview() {
