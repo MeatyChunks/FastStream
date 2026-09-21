@@ -201,6 +201,7 @@ export class PreviewFrameExtractor extends EventEmitter {
     let currentRangeIndex = 0;
     let currentClientRange = null;
     let lastOffsetCalc = Date.now();
+    const pendingFrameEncodes = new Set();
 
     const onEnd = () => {
       completed = true;
@@ -258,23 +259,22 @@ export class PreviewFrameExtractor extends EventEmitter {
 
       const frame = Math.floor(time / this.outputRateInv);
 
-      if (!this.frameBuffer[frame]) {
+      if (!this.frameBuffer[frame] && !pendingFrameEncodes.has(frame)) {
         this.extractorContext.drawImage(video, 0, 0, this.extractorCanvas.width, this.extractorCanvas.height);
-        const url = this.extractorCanvas.toDataURL('image/png');
-        if (SHOULD_STORE_AS_BLOB) {
-          // convert to blob
-          const byteString = atob(url.split(',')[1]);
-          const buffer = new ArrayBuffer(byteString.length);
-          const array = new Uint8Array(buffer);
-          for (let i = 0; i < byteString.length; i++) {
-            array[i] = byteString.charCodeAt(i);
-          }
-          const blob = new Blob([buffer], {type: 'image/png'});
-          this.frameBuffer[frame] = {
-            blob,
-            url: URL.createObjectURL(blob),
-          };
+
+        if (SHOULD_STORE_AS_BLOB && this.extractorCanvas.toBlob) {
+          pendingFrameEncodes.add(frame);
+          this.extractorCanvas.toBlob((blob) => {
+            pendingFrameEncodes.delete(frame);
+            if (destroyed || !blob || this.frameBuffer[frame]) return;
+
+            this.frameBuffer[frame] = {
+              blob,
+              url: URL.createObjectURL(blob),
+            };
+          }, 'image/jpeg', 0.82);
         } else {
+          const url = this.extractorCanvas.toDataURL('image/png');
           this.frameBuffer[frame] = {
             url,
           };
