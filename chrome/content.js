@@ -29,6 +29,8 @@
   let Activated = false;
 
   let resizeDebounce = Date.now();
+  let replacedPlayersFrame = null;
+  let pendingReplacementConvert = null;
   const Config = {
     softReplaceByDefault: true,
     hasCustomPlaylist: false,
@@ -237,6 +239,92 @@
     }
   }
 
+  function parseVideoResolutionHint(element, url) {
+    const width = Number.parseInt(element?.getAttribute?.('data-width') || element?.getAttribute?.('width') || '', 10) || 0;
+    let height = Number.parseInt(
+        element?.getAttribute?.('data-height') ||
+        element?.getAttribute?.('height') ||
+        element?.getAttribute?.('size') ||
+        element?.getAttribute?.('res') || '',
+        10,
+    ) || 0;
+
+    const label = [
+      element?.getAttribute?.('data-quality'),
+      element?.getAttribute?.('data-resolution'),
+      element?.getAttribute?.('data-res'),
+      element?.getAttribute?.('label'),
+      element?.getAttribute?.('title'),
+    ].find((value) => value && value.trim()) || '';
+
+    const hint = [label, url].filter(Boolean).join(' ');
+    const dimensions = hint.match(/(?:^|[^0-9])(\d{3,5})\s*[x×]\s*(\d{3,5})(?:[^0-9]|$)/i);
+    if (dimensions) {
+      return {
+        width: width || Number.parseInt(dimensions[1], 10),
+        height: height || Number.parseInt(dimensions[2], 10),
+        label,
+      };
+    }
+
+    const vertical = hint.match(/(?:^|[^0-9])(\d{3,4})p(?:[^0-9]|$)/i);
+    if (!height && vertical) {
+      height = Number.parseInt(vertical[1], 10);
+    }
+
+    return {width, height, label};
+  }
+
+  function collectVideoSourceVariants(videoInfo) {
+    const container = videoInfo?.highest || null;
+    const video = videoInfo?.video ||
+      (container?.tagName === 'VIDEO' ? container : querySelectorAllIncludingShadows('video', container)[0]);
+    if (!video) return [];
+
+    const variants = new Map();
+    const addVariant = (rawUrl, element, isCurrent = false) => {
+      if (!rawUrl) return;
+
+      let url;
+      try {
+        url = new URL(rawUrl, document.baseURI).href;
+      } catch (e) {
+        return;
+      }
+
+      const resolution = parseVideoResolutionHint(element, url);
+      if (isCurrent) {
+        resolution.width ||= video.videoWidth || 0;
+        resolution.height ||= video.videoHeight || 0;
+      }
+
+      const existing = variants.get(url) || {};
+      variants.set(url, {
+        url,
+        width: existing.width || resolution.width || 0,
+        height: existing.height || resolution.height || 0,
+        label: existing.label || resolution.label || '',
+        mimeType: existing.mimeType || element?.getAttribute?.('type') || '',
+      });
+    };
+
+    addVariant(video.currentSrc, video, true);
+    addVariant(video.getAttribute('src'), video, video.currentSrc === video.src);
+    video.querySelectorAll('source').forEach((source) => {
+      const url = source.src || source.getAttribute('src');
+      addVariant(url, source, !!video.currentSrc && source.src === video.currentSrc);
+    });
+
+    return variants.size > 1 ? Array.from(variants.values()) : [];
+  }
+
+  function playerOpenResponse(action, videoSources) {
+    return {
+      action,
+      videoSources,
+    };
+  }
+
   function handlePlayerOpen(request, sender, sendResponse) {
     getVideo(true).then((video) => {
       if (!video && !request.force) {
@@ -245,6 +333,7 @@
         return;
       }
 
+      const videoSources = collectVideoSourceVariants(video);
       const playerFillsScreen = video?.highest?.tagName === 'BODY';
       const newURL = new URL(request.url);
       if (!video || playerFillsScreen) {
@@ -254,7 +343,7 @@
           }
           window.location = newURL.href;
           console.log('redirecting to player');
-          sendResponse('redirect');
+          sendResponse(playerOpenResponse('redirect', videoSources));
         } else {
           const iframe = document.createElement('iframe');
           newURL.searchParams.set('parent_frame_id', request.frameId);
@@ -266,7 +355,7 @@
           document.body.appendChild(iframe);
           fillScreenIframe(iframe);
           console.log('Overlaying iframe');
-          sendResponse('replaceall');
+          sendResponse(playerOpenResponse('replaceall', videoSources));
         }
       } else {
         const softReplace = request.softReplace || Config.softReplaceByDefault;
@@ -299,7 +388,7 @@
         updateReplacedPlayer(video.highest, iframe, softReplace);
 
         console.log('replacing video with iframe');
-        sendResponse('replace');
+        sendResponse(playerOpenResponse('replace', videoSources));
 
         if (softReplace) {
           for (let i = 1; i <= 8; i++) {
@@ -866,6 +955,18 @@
   }
 
   function updateReplacedPlayers(convert = null) {
+    if (convert) pendingReplacementConvert = convert;
+    if (replacedPlayersFrame !== null) return;
+
+    replacedPlayersFrame = window.requestAnimationFrame(() => {
+      replacedPlayersFrame = null;
+      const convertNow = pendingReplacementConvert;
+      pendingReplacementConvert = null;
+      updateReplacedPlayersNow(convertNow);
+    });
+  }
+
+  function updateReplacedPlayersNow(convert = null) {
     iframeMap.forEach((iframeObj) => {
       if (iframeObj.replacedData) {
         const {iframe, old, softReplace} = iframeObj.replacedData;
@@ -1063,6 +1164,21 @@
     return results;
   }
 
+  function querySelectorIncludingShadows(query, currentElement = document.body) {
+    if (!currentElement) return null;
+
+    const direct = currentElement.querySelector(query);
+    if (direct) return direct;
+
+    const allElements = currentElement.querySelectorAll('*');
+    for (const element of allElements) {
+      if (!element.shadowRoot) continue;
+      const found = querySelectorIncludingShadows(query, element.shadowRoot);
+      if (found) return found;
+    }
+    return null;
+  }
+
   /**
    * Finds the element a site integration named, preferring the selectors it listed
    * first.
@@ -1080,7 +1196,7 @@
     const queries = Array.isArray(query) ? query : [query];
 
     for (const one of queries) {
-      const found = querySelectorAllIncludingShadows(one)[0];
+      const found = querySelectorIncludingShadows(one);
       if (found) {
         return found;
       }
@@ -1155,9 +1271,8 @@
     });
   }
 
-  function testSimilarity(originalElement, childElement, parentElement) {
+  function testSimilarity(originalRect, childElement, parentElement) {
     const parentStyle = window.getComputedStyle(parentElement);
-    // const childStyle = window.getComputedStyle(childElement);
     const parentRect = parentElement.getBoundingClientRect();
     const childRect = childElement.getBoundingClientRect();
 
@@ -1165,8 +1280,6 @@
     if (parentStyle.position === 'fixed') {
       return false;
     }
-
-    const originalRect = originalElement.getBoundingClientRect();
     if (parentRect.width === 0 || parentRect.height === 0) {
       return true;
     }
@@ -1196,11 +1309,11 @@
 
   function getParentElementsWithSameBounds(element) {
     const elements = [];
-    const originalElement = element;
+    const originalRect = element.getBoundingClientRect();
 
     while (getParentElement(element)) {
       const parent = getParentElement(element);
-      if (testSimilarity(originalElement, element, parent)) {
+      if (testSimilarity(originalRect, element, parent)) {
         elements.push(parent);
       } else {
         break;

@@ -16,6 +16,12 @@ export class ProgressBar extends EventEmitter {
     this.skipSegmentsCache = [];
     this.chapterCache = [];
     this.hasShownSkip = false;
+    this._skipLayoutDirty = true;
+    this._chapterLayoutDirty = true;
+    this._activeSkipSegmentIndex = -1;
+    this._skipButtonVisible = false;
+    this._nextBannerVisible = false;
+    this._nextBannerSeconds = null;
     this.isSeeking = false;
     this.isMouseOverProgressbar = false;
 
@@ -23,6 +29,32 @@ export class ProgressBar extends EventEmitter {
     this.keepPreciseModeOpen = false;
     this.onPreciseModeStartHandle = this.onPreciseModeStart.bind(this);
     this.onPreciseModeEndHandle = this.onPreciseModeEnd.bind(this);
+
+    this._progressGeometry = null;
+    this._geometryObserver = null;
+    this._hoverFrame = null;
+    this._hoverClientX = 0;
+    this._boundInvalidateGeometry = this.invalidateGeometry.bind(this);
+  }
+
+  invalidateGeometry() {
+    this._progressGeometry = null;
+  }
+
+  getProgressGeometry() {
+    if (!this._progressGeometry) {
+      const rect = DOMElements.progressContainer.getBoundingClientRect();
+      this._progressGeometry = {
+        left: rect.left,
+        top: rect.top,
+        width: rect.width || DOMElements.progressContainer.clientWidth,
+        previewWidth: Math.max(
+            DOMElements.seekPreviewVideo.clientWidth,
+            DOMElements.seekPreview.clientWidth,
+        ),
+      };
+    }
+    return this._progressGeometry;
   }
 
   onPreciseModeStart() {
@@ -103,6 +135,14 @@ export class ProgressBar extends EventEmitter {
     DOMElements.progressContainer.addEventListener('mouseleave', this.onProgressbarMouseLeave.bind(this));
     DOMElements.progressContainer.addEventListener('mousemove', this.onProgressbarMouseMove.bind(this));
 
+    if (window.ResizeObserver) {
+      this._geometryObserver = new ResizeObserver(this._boundInvalidateGeometry);
+      this._geometryObserver.observe(DOMElements.progressContainer);
+      this._geometryObserver.observe(DOMElements.seekPreview);
+      this._geometryObserver.observe(DOMElements.seekPreviewVideo);
+    }
+    window.addEventListener('resize', this._boundInvalidateGeometry);
+
     DOMElements.nextVideoBannerButton.addEventListener('click', (e) => {
       this.client.nextVideo();
       e.preventDefault();
@@ -117,6 +157,16 @@ export class ProgressBar extends EventEmitter {
     this.progressCacheAudio = [];
     this.skipSegments = [];
     this.hasShownSkip = false;
+    this._skipLayoutDirty = true;
+    this._chapterLayoutDirty = true;
+    this._activeSkipSegmentIndex = -1;
+    this._skipButtonVisible = false;
+    this._nextBannerVisible = false;
+    this._nextBannerSeconds = null;
+    DOMElements.skipButton.style.display = 'none';
+    DOMElements.nextVideoBannerButton.style.display = 'none';
+    DOMElements.progressContainer.classList.remove('skip_freeze');
+    DOMElements.skipButton.classList.remove('shiftup');
   }
 
   collectProgressbarData(fragments) {
@@ -287,17 +337,15 @@ export class ProgressBar extends EventEmitter {
     };
   }
 
-  updateSkipSegments() {
-    // DOMElements.skipSegmentsContainer.replaceChildren();
+  invalidateSkipLayout() {
+    this._skipLayoutDirty = true;
+    this._chapterLayoutDirty = true;
+    this._activeSkipSegmentIndex = -1;
+  }
 
+  rebuildSkipLayout(duration) {
     const introMatch = this.client.videoAnalyzer.getIntro();
     const outroMatch = this.client.videoAnalyzer.getOutro();
-
-    const duration = this.client.duration;
-    if (!duration) {
-      return;
-    }
-
     const skipSegments = [];
 
     if (introMatch) {
@@ -328,63 +376,119 @@ export class ProgressBar extends EventEmitter {
       });
     });
 
-    let currentSegment = null;
-    const time = this.client.currentTime;
-
-    if (this.skipSegmentsCache.length > skipSegments.length) {
-      // Remove elements
-      for (let i = skipSegments.length; i < this.skipSegmentsCache.length; i++) {
-        this.skipSegmentsCache[i].remove();
-      }
-      this.skipSegmentsCache.length = skipSegments.length;
-    } else if (this.skipSegmentsCache.length < skipSegments.length) {
-      // Add elements
-      for (let i = this.skipSegmentsCache.length; i < skipSegments.length; i++) {
-        const segmentElement = document.createElement('div');
-        DOMElements.skipSegmentsContainer.appendChild(segmentElement);
-        this.skipSegmentsCache.push(segmentElement);
-      }
+    while (this.skipSegmentsCache.length > skipSegments.length) {
+      this.skipSegmentsCache.pop().remove();
     }
-
+    while (this.skipSegmentsCache.length < skipSegments.length) {
+      const segmentElement = document.createElement('div');
+      DOMElements.skipSegmentsContainer.appendChild(segmentElement);
+      this.skipSegmentsCache.push(segmentElement);
+    }
 
     skipSegments.forEach((segment, i) => {
       const segmentElement = this.skipSegmentsCache[i];
       segmentElement.className = 'skip_segment ' + segment.class;
       segmentElement.style.left = segment.startTime / duration * 100 + '%';
       segmentElement.style.width = (segment.endTime - segment.startTime) / duration * 100 + '%';
-
-      if (segment.color) {
-        segmentElement.style.backgroundColor = segment.color;
-      }
-
-      if (!currentSegment && time >= segment.startTime && time < segment.endTime) {
-        currentSegment = segment;
-        segmentElement.classList.add('active');
-      }
+      segmentElement.style.backgroundColor = segment.color || '';
     });
 
     this.skipSegments = skipSegments;
+    this._skipLayoutDirty = false;
+    this._activeSkipSegmentIndex = -1;
+  }
 
-    if (currentSegment) {
-      DOMElements.skipButton.style.display = '';
+  rebuildChapterLayout(duration) {
+    const chapters = [];
+    this.client.chapters.forEach((chapter) => {
+      if (chapter.startTime > 0) {
+        chapters.push({
+          ...chapter,
+          startTime: Utils.clamp(chapter.startTime, 0, duration),
+          endTime: Utils.clamp(chapter.endTime, 0, duration),
+        });
+      }
+    });
+
+    while (this.chapterCache.length > chapters.length) {
+      this.chapterCache.pop().remove();
+    }
+    while (this.chapterCache.length < chapters.length) {
+      const chapterElement = document.createElement('div');
+      DOMElements.skipSegmentsContainer.appendChild(chapterElement);
+      this.chapterCache.push(chapterElement);
+    }
+
+    chapters.forEach((chapter, i) => {
+      const chapterElement = this.chapterCache[i];
+      chapterElement.className = 'chapter';
+      chapterElement.style.left = chapter.startTime / duration * 100 + '%';
+    });
+
+    this._chapterLayoutDirty = false;
+  }
+
+  updateActiveSkipSegment(time) {
+    const activeIndex = this.skipSegments.findIndex((segment) => {
+      return segment.startTime <= time && segment.endTime > time;
+    });
+
+    if (activeIndex !== this._activeSkipSegmentIndex) {
+      if (this._activeSkipSegmentIndex >= 0) {
+        this.skipSegmentsCache[this._activeSkipSegmentIndex]?.classList.remove('active');
+      }
+      if (activeIndex >= 0) {
+        this.skipSegmentsCache[activeIndex]?.classList.add('active');
+      }
+      this._activeSkipSegmentIndex = activeIndex;
+    }
+
+    return activeIndex >= 0 ? this.skipSegments[activeIndex] : null;
+  }
+
+  updateSkipSegments() {
+    const duration = this.client.duration;
+    if (!duration) return;
+
+    if (this._skipLayoutDirty) {
+      this.rebuildSkipLayout(duration);
+    }
+    if (this._chapterLayoutDirty) {
+      this.rebuildChapterLayout(duration);
+    }
+
+    const time = this.client.currentTime;
+    const currentSegment = this.updateActiveSkipSegment(time);
+
+    const shouldShowSkip = !!currentSegment;
+    if (shouldShowSkip !== this._skipButtonVisible) {
+      this._skipButtonVisible = shouldShowSkip;
+      DOMElements.skipButton.style.display = shouldShowSkip ? '' : 'none';
+      DOMElements.progressContainer.classList.toggle('skip_freeze', shouldShowSkip);
+    }
+    if (currentSegment && DOMElements.skipButton.textContent !== currentSegment.skipText) {
       DOMElements.skipButton.textContent = currentSegment.skipText;
       DOMElements.skipButton.ariaLabel = currentSegment.skipText;
-      DOMElements.progressContainer.classList.add('skip_freeze');
-    } else {
-      DOMElements.progressContainer.classList.remove('skip_freeze');
-      DOMElements.skipButton.style.display = 'none';
     }
 
-    if (this.client.options.autoplayNext && this.client.hasNextVideo() && (currentSegment?.class === 'outro' || Math.ceil(duration - time) <= 10)) { // Outro
-      DOMElements.nextVideoBannerButton.style.display = '';
-      DOMElements.nextVideoBannerButton.textContent = Localize.getMessage('player_nextvideoin', [Math.ceil(duration - time)]);
-      DOMElements.skipButton.classList.add('shiftup');
-    } else {
-      DOMElements.nextVideoBannerButton.style.display = 'none';
-      DOMElements.skipButton.classList.remove('shiftup');
+    const secondsRemaining = Math.ceil(duration - time);
+    const shouldShowNext = this.client.options.autoplayNext &&
+      this.client.hasNextVideo() &&
+      (currentSegment?.class === 'outro' || secondsRemaining <= 10);
+
+    if (shouldShowNext !== this._nextBannerVisible) {
+      this._nextBannerVisible = shouldShowNext;
+      DOMElements.nextVideoBannerButton.style.display = shouldShowNext ? '' : 'none';
+      DOMElements.skipButton.classList.toggle('shiftup', shouldShowNext);
+      if (!shouldShowNext) this._nextBannerSeconds = null;
+    }
+    if (shouldShowNext && secondsRemaining !== this._nextBannerSeconds) {
+      this._nextBannerSeconds = secondsRemaining;
+      DOMElements.nextVideoBannerButton.textContent =
+        Localize.getMessage('player_nextvideoin', [secondsRemaining]);
     }
 
-    if (DOMElements.skipButton.style.display !== 'none' || DOMElements.nextVideoBannerButton.style.display !== 'none') {
+    if (this._skipButtonVisible || this._nextBannerVisible) {
       if (!this.hasShownSkip) {
         this.hasShownSkip = true;
 
@@ -397,38 +501,6 @@ export class ProgressBar extends EventEmitter {
     } else {
       this.hasShownSkip = false;
     }
-
-    const chapters = [];
-    this.client.chapters.forEach((chapter) => {
-      if (chapter.startTime > 0) {
-        chapters.push({
-          ...chapter,
-          startTime: Utils.clamp(chapter.startTime, 0, duration),
-          endTime: Utils.clamp(chapter.endTime, 0, duration),
-        });
-      }
-    });
-
-    if (this.chapterCache.length > chapters.length) {
-      // Remove elements
-      for (let i = chapters.length; i < this.chapterCache.length; i++) {
-        this.chapterCache[i].remove();
-      }
-      this.chapterCache.length = chapters.length;
-    } else if (this.chapterCache.length < chapters.length) {
-      // Add elements
-      for (let i = this.chapterCache.length; i < chapters.length; i++) {
-        const chapterElement = document.createElement('div');
-        DOMElements.skipSegmentsContainer.appendChild(chapterElement);
-        this.chapterCache.push(chapterElement);
-      }
-    }
-
-    chapters.forEach((chapter, i) => {
-      const chapterElement = this.chapterCache[i];
-      chapterElement.classList.add('chapter');
-      chapterElement.style.left = chapter.startTime / duration * 100 + '%';
-    });
   }
 
   skipSegment() {
@@ -445,9 +517,21 @@ export class ProgressBar extends EventEmitter {
   }
 
   onProgressbarMouseMove(event) {
-    const currentX = Math.min(Math.max(event.clientX - WebUtils.getOffsetLeft(DOMElements.progressContainer), 0), DOMElements.progressContainer.clientWidth);
-    const totalWidth = DOMElements.progressContainer.clientWidth;
+    this._hoverClientX = event.clientX;
+    if (this._hoverFrame !== null) return;
 
+    this._hoverFrame = window.requestAnimationFrame(() => {
+      this._hoverFrame = null;
+      this.renderProgressbarPreview(this._hoverClientX);
+    });
+  }
+
+  renderProgressbarPreview(clientX) {
+    const geometry = this.getProgressGeometry();
+    const totalWidth = geometry.width;
+    if (!totalWidth) return;
+
+    const currentX = Math.min(Math.max(clientX - geometry.left, 0), totalWidth);
     const time = this.client.duration * currentX / totalWidth;
     const chapter = this.client.chapters.find((chapter) => chapter.startTime <= time && chapter.endTime >= time);
     const segment = this.skipSegments.find((segment) => segment.startTime <= time && segment.endTime >= time);
@@ -470,7 +554,7 @@ export class ProgressBar extends EventEmitter {
     text += StringUtils.formatTime(time);
     DOMElements.seekPreviewText.innerText = text;
 
-    const maxWidth = Math.max(DOMElements.seekPreviewVideo.clientWidth, DOMElements.seekPreview.clientWidth);
+    const maxWidth = geometry.previewWidth;
 
     let nudgeAmount = 0;
 
@@ -512,13 +596,18 @@ export class ProgressBar extends EventEmitter {
     this.client.setSeekSave(false);
 
     DOMElements.progressContainer.classList.add('freeze');
+    // Cache geometry for the drag. ResizeObserver invalidates it if layout changes.
+    let geometry = this.getProgressGeometry();
     // we need an initial position for touchstart events, as mouse up has no offset x for iOS
-    let initialPosition = Math.min(Math.max(event.clientX - WebUtils.getOffsetLeft(DOMElements.progressContainer), 0), DOMElements.progressContainer.clientWidth);
+    let initialPosition = Math.min(Math.max(event.clientX - geometry.left, 0), geometry.width);
 
     let preciseSavedTime = null;
     let preciseSavedPosition = null;
+    let dragFrame = null;
+    let pendingPointer = null;
     const shiftTime = (timeBarX) => {
-      const totalWidth = DOMElements.progressContainer.clientWidth;
+      geometry = this.getProgressGeometry();
+      const totalWidth = geometry.width;
       if (totalWidth) {
         let newTime;
         if (preciseSavedPosition !== null) {
@@ -532,10 +621,11 @@ export class ProgressBar extends EventEmitter {
       }
     };
 
-    const onProgressbarMouseMove = (event) => {
+    const applyPointerMove = (clientX, clientY) => {
       this.hidePreview();
-      const currentY = Math.min(Math.max(event.clientY - WebUtils.getOffsetTop(DOMElements.progressContainer), -100), 50);
-      const currentX = Math.min(Math.max(event.clientX - WebUtils.getOffsetLeft(DOMElements.progressContainer), 0), DOMElements.progressContainer.clientWidth);
+      geometry = this.getProgressGeometry();
+      const currentY = Math.min(Math.max(clientY - geometry.top, -100), 50);
+      const currentX = Math.min(Math.max(clientX - geometry.left, 0), geometry.width);
       const isExpanded = DOMElements.playerContainer.classList.contains('expanded');
       const offset = isExpanded ? 0 : 80;
       if ((this.preciseMode || preciseSavedPosition !== null) && currentY > 20) {
@@ -550,11 +640,32 @@ export class ProgressBar extends EventEmitter {
         this.startPreciseMode();
       }
 
-      initialPosition = NaN; // mouse up will fire after the move, we don't want to trigger the initial position in the event of iOS
+      initialPosition = NaN;
       shiftTime(currentX);
     };
 
+    const onProgressbarMouseMove = (event) => {
+      pendingPointer = {
+        clientX: event.clientX,
+        clientY: event.clientY,
+      };
+      if (dragFrame !== null) return;
+
+      dragFrame = window.requestAnimationFrame(() => {
+        dragFrame = null;
+        const pointer = pendingPointer;
+        pendingPointer = null;
+        if (pointer) applyPointerMove(pointer.clientX, pointer.clientY);
+      });
+    };
+
     const onProgressbarMouseUp = (event) => {
+      if (dragFrame !== null) {
+        window.cancelAnimationFrame(dragFrame);
+        dragFrame = null;
+      }
+      pendingPointer = null;
+
       DOMElements.playerContainer.removeEventListener('mousemove', onProgressbarMouseMove);
       DOMElements.playerContainer.removeEventListener('touchmove', onProgressbarMouseMove);
       DOMElements.playerContainer.removeEventListener('mouseup', onProgressbarMouseUp);
@@ -569,7 +680,8 @@ export class ProgressBar extends EventEmitter {
         this.showPreview();
       }
 
-      let clickedX = Math.min(Math.max(event.clientX - WebUtils.getOffsetLeft(DOMElements.progressContainer), 0), DOMElements.progressContainer.clientWidth);
+      geometry = this.getProgressGeometry();
+      let clickedX = Math.min(Math.max(event.clientX - geometry.left, 0), geometry.width);
 
       if (isNaN(clickedX) && !isNaN(initialPosition)) {
         clickedX = initialPosition;
@@ -602,7 +714,18 @@ export class ProgressBar extends EventEmitter {
 
   onProgressbarMouseEnter() {
     this.isMouseOverProgressbar = true;
+    this.invalidateGeometry();
     this.showPreview();
+  }
+
+  destroy() {
+    if (this._hoverFrame !== null) {
+      window.cancelAnimationFrame(this._hoverFrame);
+      this._hoverFrame = null;
+    }
+    this._geometryObserver?.disconnect();
+    this._geometryObserver = null;
+    window.removeEventListener('resize', this._boundInvalidateGeometry);
   }
 
   showPreview() {

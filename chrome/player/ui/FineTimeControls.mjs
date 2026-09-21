@@ -27,6 +27,9 @@ export class FineTimeControls extends EventEmitter {
     this._audioDirty = true;
     this._lastFrameSourceRefresh = 0;
     this._resizeObserver = null;
+    this._timelineDragFrame = null;
+    this._timelinePendingX = null;
+    this._timelineWidth = 0;
 
     this.setup();
   }
@@ -151,9 +154,17 @@ export class FineTimeControls extends EventEmitter {
         this._timelineWindowKey = null;
         this._audioDirty = true;
         this._lastFrameSourceRefresh = 0;
+        this._timelineWidth = 0;
       });
       this._resizeObserver.observe(this.ui.timelineContainer);
     }
+
+    const getTimelineWidth = () => {
+      if (this._timelineWidth <= 0) {
+        this._timelineWidth = this.ui.timelineTicks.clientWidth;
+      }
+      return this._timelineWidth;
+    };
 
     // timeline is grabbable
     let isGrabbing = false;
@@ -169,6 +180,7 @@ export class FineTimeControls extends EventEmitter {
       isGrabbing = true;
       grabStart = e.clientX;
       grabStartTime = video.currentTime;
+      this._timelineWidth = this.ui.timelineTicks.clientWidth;
       this.isSeeking = true;
       shouldPlay = this.client.state.playing;
       if (this.client.state.playing) {
@@ -182,8 +194,14 @@ export class FineTimeControls extends EventEmitter {
       if (!this.client.player) return;
       const video = this.client.player.getVideo();
       if (isGrabbing) {
+        if (this._timelineDragFrame !== null) {
+          window.cancelAnimationFrame(this._timelineDragFrame);
+          this._timelineDragFrame = null;
+        }
+        this._timelinePendingX = null;
+        const width = getTimelineWidth();
         const delta = e.clientX - grabStart;
-        const time = grabStartTime - (delta / this.ui.timelineTicks.clientWidth * video.duration);
+        const time = width > 0 ? grabStartTime - (delta / width * video.duration) : grabStartTime;
         this.client.currentTime = time;
         this.client.updateTime(time);
         this.isSeeking = false;
@@ -197,14 +215,25 @@ export class FineTimeControls extends EventEmitter {
     DOMElements.playerContainer.addEventListener('mouseup', this._timelineMouseUp, true);
 
     this._timelineMouseMove = (e) => {
-      if (!this.client.player) return;
-      const video = this.client.player.getVideo();
-      if (isGrabbing) {
-        const delta = e.clientX - grabStart;
-        const time = grabStartTime - (delta / this.ui.timelineTicks.clientWidth * video.duration);
+      if (!this.client.player || !isGrabbing) return;
+
+      this._timelinePendingX = e.clientX;
+      if (this._timelineDragFrame !== null) return;
+
+      this._timelineDragFrame = window.requestAnimationFrame(() => {
+        this._timelineDragFrame = null;
+        const clientX = this._timelinePendingX;
+        this._timelinePendingX = null;
+        const video = this.client.player?.getVideo();
+        if (!video || !isGrabbing || clientX === null) return;
+
+        const width = getTimelineWidth();
+        if (width <= 0) return;
+        const delta = clientX - grabStart;
+        const time = grabStartTime - (delta / width * video.duration);
         this.client.currentTime = time;
         this.client.updateTime(time);
-      }
+      });
     };
     DOMElements.playerContainer.addEventListener('mousemove', this._timelineMouseMove);
   }
@@ -285,6 +314,11 @@ export class FineTimeControls extends EventEmitter {
   destroy() {
     this.stop();
     clearTimeout(this.closeTimeout);
+    if (this._timelineDragFrame !== null) {
+      window.cancelAnimationFrame(this._timelineDragFrame);
+      this._timelineDragFrame = null;
+    }
+    this._timelinePendingX = null;
     this._resizeObserver?.disconnect();
     this._resizeObserver = null;
 

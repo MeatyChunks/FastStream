@@ -129,7 +129,7 @@ export class FastStreamClient extends EventEmitter {
     }
 
     this.videoAnalyzer.on(AnalyzerEvents.MATCH, () => {
-      this.interfaceController.updateSkipSegments();
+      this.interfaceController.updateSkipSegments(true);
     });
 
     DOMElements.playerContainer.addEventListener('keydown', (e) => {
@@ -154,6 +154,7 @@ export class FastStreamClient extends EventEmitter {
     this.pastSeeks = [];
     this.pastUnseeks = [];
     this.fragmentsStore = {};
+    this._boundMainloop = this.mainloop.bind(this);
     this.mainloop();
   }
 
@@ -414,7 +415,7 @@ export class FastStreamClient extends EventEmitter {
       this.interfaceController.updateToolVisibility();
     }
 
-    this.updateHasDownloadSpace();
+    this.updateHasDownloadSpace(true);
     this.interfaceController.updateAutoNextIndicator();
 
     this.syncedAudioPlayer?.setVideoDelay(this.options.videoDelay);
@@ -513,7 +514,7 @@ export class FastStreamClient extends EventEmitter {
    */
   updateDuration() {
     this.interfaceController.durationChanged();
-    this.updateHasDownloadSpace();
+    this.updateHasDownloadSpace(true);
   }
 
   /**
@@ -606,7 +607,7 @@ export class FastStreamClient extends EventEmitter {
   updateQualityLevels() {
     this.interfaceController.updateQualityLevels();
     this.interfaceController.updateLanguageTracks();
-    this.updateHasDownloadSpace();
+    this.updateHasDownloadSpace(true);
   }
 
   /**
@@ -648,7 +649,12 @@ export class FastStreamClient extends EventEmitter {
   /**
    * Updates the available download space and buffer indicators.
    */
-  updateHasDownloadSpace() {
+  updateHasDownloadSpace(force = false) {
+    const now = performance.now();
+    const lastUpdate = this._lastDownloadSpaceUpdate ?? Number.NEGATIVE_INFINITY;
+    if (!force && now - lastUpdate < 5000) return;
+    this._lastDownloadSpaceUpdate = now;
+
     const levels = this.getVideoLevels();
     if (!levels) return;
 
@@ -914,6 +920,8 @@ export class FastStreamClient extends EventEmitter {
         timeFromURL = parseInt(timeFromURL);
       }
 
+
+      this.applyPreferredSourceVariant(source);
 
       const autoPlay = this.options.autoPlay;
 
@@ -1189,7 +1197,7 @@ export class FastStreamClient extends EventEmitter {
    */
   mainloop() {
     if (this.destroyed) return;
-    setTimeout(this.mainloop.bind(this), 1000);
+    setTimeout(this._boundMainloop, 1000);
 
     if (this.needsUserInteraction()) {
       this.interfaceController.setStatusMessage(StatusTypes.REQINTERACTION, Localize.getMessage('player_needs_interaction'), 'warning clickable');
@@ -1627,7 +1635,7 @@ export class FastStreamClient extends EventEmitter {
     });
 
     this.context.on(DefaultPlayerEvents.SKIP_SEGMENTS, () => {
-      this.interfaceController.updateSkipSegments();
+      this.interfaceController.updateSkipSegments(true);
     });
   }
 
@@ -1820,6 +1828,88 @@ export class FastStreamClient extends EventEmitter {
    */
   getVideoLevels() {
     return this.player?.getVideoLevels() || new Map();
+  }
+
+  /**
+   * Gets alternate URLs exposed by the page's original video element.
+   * These are whole-source quality choices, not fragment levels from the active player.
+   * @return {Array<Object>}
+   */
+  getSourceVariants() {
+    return this.source?.sourceVariants || [];
+  }
+
+  /**
+   * Applies the configured default quality to page-provided source variants on initial
+   * load. Explicit quality-picker selections bypass this so the setting never fights
+   * the user's current choice.
+   * @param {VideoSource} source
+   */
+  applyPreferredSourceVariant(source) {
+    if (!source || source.sourceVariantExplicit || source.sourceVariants?.length < 2) return;
+
+    const chosen = this.levelManager.pickSourceVariant(
+        source.sourceVariants,
+        this.levelManager.getDesiredVideoHeight(),
+        source.url,
+    );
+    if (!chosen?.url) return;
+
+    source.url = chosen.url;
+    source.identifier = source.url.split(/[?#]/)[0];
+  }
+
+  /**
+   * Returns whether a page-provided source variant is the URL currently playing.
+   * @param {Object} variant
+   * @return {boolean}
+   */
+  isSourceVariantActive(variant) {
+    if (!variant?.url || !this.source?.url) return false;
+    try {
+      return new URL(variant.url, window.location.href).href ===
+        new URL(this.source.url, window.location.href).href;
+    } catch (e) {
+      return variant.url === this.source.url;
+    }
+  }
+
+  /**
+   * Switches between whole-file/page-provided source variants while preserving the
+   * user's playback state. This deliberately reuses the current FastStream player mode
+   * so an accelerated MP4 source stays accelerated rather than falling back to <video>.
+   * @param {Object} variant
+   * @return {Promise<void>}
+   */
+  async setSourceVariant(variant) {
+    if (!variant?.url || !this.source || this.isSourceVariantActive(variant)) return;
+
+    const currentTime = this.currentTime;
+    const wasPlaying = !this.paused;
+    const source = this.source.copy();
+    source.url = variant.url;
+    source.identifier = source.url.split(/[?#]/)[0];
+    source.defaultLevelInfo = null;
+    source.sourceVariantExplicit = true;
+
+    this.setSeekSave(false);
+    try {
+      await this.setSource(source);
+      if (!this.player) return;
+
+      if (Number.isFinite(currentTime) && currentTime > 0) {
+        const maxTime = this.duration > 0 ? Math.max(0, this.duration - 0.05) : currentTime;
+        this.currentTime = Math.min(currentTime, maxTime);
+      }
+
+      if (wasPlaying) {
+        await this.play();
+      } else {
+        await this.pause();
+      }
+    } finally {
+      this.setSeekSave(true);
+    }
   }
 
   /**
@@ -2178,7 +2268,7 @@ export class FastStreamClient extends EventEmitter {
     });
 
     this.customChapters = cleaned.length ? cleaned : null;
-    this.interfaceController.updateSkipSegments();
+    this.interfaceController.updateSkipSegments(true);
   }
 
   /**

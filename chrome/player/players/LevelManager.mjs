@@ -154,6 +154,34 @@ export class LevelManager {
     return list.map((item) => item.level);
   }
 
+  /**
+   * Picks a page-provided whole-source variant using the same preferred-height rule as
+   * adaptive video levels. Variants without a usable height are only used as a fallback.
+   * @param {Array<Object>} variants
+   * @param {number|null} desiredHeight
+   * @param {string|null} currentURL
+   * @return {Object|null}
+   */
+  pickSourceVariant(variants, desiredHeight = null, currentURL = null) {
+    if (!Array.isArray(variants) || variants.length === 0) return null;
+
+    const withHeight = variants.filter((variant) => Number.isFinite(variant?.height) && variant.height > 0);
+    if (withHeight.length > 0) {
+      const targetHeight = desiredHeight || this.getDesiredVideoHeight();
+      return this.matchQuality(withHeight.map((variant) => ({
+        ...variant,
+        bitrate: Number.isFinite(variant.bitrate) ? variant.bitrate : 0,
+      })), targetHeight)[0] || null;
+    }
+
+    if (currentURL) {
+      const current = variants.find((variant) => variant?.url === currentURL);
+      if (current) return current;
+    }
+
+    return variants[0] || null;
+  }
+
   isLevelContainerPrioritized(level) {
     if (!level || !level.mimeType) {
       return false;

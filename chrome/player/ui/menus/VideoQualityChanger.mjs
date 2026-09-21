@@ -135,16 +135,78 @@ export class VideoQualityChanger extends EventEmitter {
     return map;
   }
 
+  formatSourceVariantLabel(variant) {
+    let dimensions = '';
+    if (variant.width > 0 && variant.height > 0) {
+      dimensions = `${variant.width}x${variant.height}`;
+    } else if (variant.height > 0) {
+      dimensions = `${variant.height}p`;
+    }
+
+    const label = variant.label || dimensions || Localize.getMessage('player_quality_unknown');
+    if (variant.label && dimensions && !variant.label.includes(dimensions) && !variant.label.includes(`${variant.height}p`)) {
+      return `${variant.label} ${dimensions}`;
+    }
+    return label;
+  }
+
+  appendSourceVariants(client, variants) {
+    const sorted = [...variants].sort((a, b) => {
+      const heightDiff = (b.height || 0) - (a.height || 0);
+      if (heightDiff) return heightDiff;
+      return (b.width || 0) - (a.width || 0);
+    });
+
+    sorted.forEach((variant) => {
+      const element = document.createElement('div');
+      element.classList.add('fluid_video_source_list_item');
+
+      const active = client.isSourceVariantActive(variant);
+      if (active) element.classList.add('source_active');
+
+      const container = variant.mimeType?.includes('/') ? variant.mimeType.split('/')[1] : '';
+      const label = this.formatSourceVariantLabel(variant);
+      const text = document.createElement('span');
+      text.textContent = `${label}${container ? ` ${container}` : ''}${active ? ' ' + Localize.getMessage('player_quality_current') : ''}`;
+      element.appendChild(text);
+
+      const titleParts = [`Source: ${variant.url}`];
+      if (variant.width || variant.height) {
+        titleParts.push(`Dimensions: ${variant.width || '?'}x${variant.height || '?'}`);
+      }
+      if (variant.mimeType) titleParts.push(`Type: ${variant.mimeType}`);
+      element.title = titleParts.join('\n');
+
+      element.addEventListener('click', (e) => {
+        if (!client.isSourceVariantActive(variant)) {
+          Array.from(DOMElements.videoSourceList.getElementsByClassName('source_active')).forEach((activeElement) => {
+            activeElement.classList.remove('source_active');
+          });
+          element.classList.add('source_active');
+          this.emit('sourceQualityChanged', variant);
+        }
+        e.stopPropagation();
+      });
+
+      DOMElements.videoSourceList.appendChild(element);
+    });
+  }
+
   updateQualityLevels(client) {
     const videoLevels = client.getVideoLevels();
-    if (!videoLevels || videoLevels.size < 1) {
+    const sourceVariants = client.getSourceVariants?.() || [];
+    const hasSourceVariants = sourceVariants.length > 1;
+    if ((!videoLevels || videoLevels.size < 1) && !hasSourceVariants) {
       DOMElements.videoSource.classList.add('hidden');
       return;
     } else {
       DOMElements.videoSource.classList.remove('hidden');
     }
 
-    const videoLevelsByDimensions = this.groupLevelsByDimensions(client.getLevelManager().filterVideoLevelsByLanguage(Array.from(videoLevels.values())));
+    const renderPlayerLevels = !hasSourceVariants || videoLevels.size > 1;
+    const videoLevelsByDimensions = renderPlayerLevels ?
+      this.groupLevelsByDimensions(client.getLevelManager().filterVideoLevelsByLanguage(Array.from(videoLevels.values()))) :
+      new Map();
     const currentVideoLevelID = client.getCurrentVideoLevelID();
 
     DOMElements.videoSourceList.replaceChildren();
@@ -309,13 +371,21 @@ export class VideoQualityChanger extends EventEmitter {
       }
     });
 
+    if (hasSourceVariants) {
+      this.appendSourceVariants(client, sourceVariants);
+    }
 
     const current = videoLevels.get(currentVideoLevelID);
-    if (!current) {
+    const currentVariant = hasSourceVariants ? sourceVariants.find((variant) => client.isSourceVariantActive(variant)) : null;
+    if (!current && !currentVariant) {
       console.warn('No current level');
       return;
     }
-    let maxSize = Math.min(current.width, current.height);
+
+    let maxSize = current ? Math.min(current.width, current.height) : 0;
+    if (maxSize <= 0 && currentVariant) {
+      maxSize = currentVariant.height || Math.min(currentVariant.width || 0, currentVariant.height || 0);
+    }
     if (maxSize <= 0) {
       maxSize = Math.min(client.videoWidth, client.videoHeight);
     }

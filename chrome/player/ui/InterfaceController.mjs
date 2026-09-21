@@ -49,6 +49,10 @@ export class InterfaceController {
     this._boundOnControlsMouseLeave = this.onControlsMouseLeave.bind(this);
     this._boundSkipSegment = this.skipSegment.bind(this);
     this._boundProgressLoop = this.progressLoop.bind(this);
+    this._fragmentUpdateFrame = null;
+    this._markerUpdateFrame = null;
+    this._activeChapterIndex = -1;
+    this._activeChapterName = null;
 
     this.toolManager = new ToolManager(this.client, this);
 
@@ -78,6 +82,11 @@ export class InterfaceController {
         }
       }
       this.client.setCurrentVideoLevelID(level.id);
+    });
+    this.videoQualityChanger.on('sourceQualityChanged', (variant) => {
+      this.client.setSourceVariant(variant).catch((e) => {
+        console.error('Failed to switch source quality', e);
+      });
     });
 
     this.audioQualityChanger = new AudioQualityChanger();
@@ -214,6 +223,8 @@ export class InterfaceController {
     this.progressBar.reset();
     this.saveManager.reset();
     this.failed = false;
+    this._activeChapterIndex = -1;
+    this._activeChapterName = null;
     this.setStatusMessage('error', null, 'error');
     this.setStatusMessage('chapter', null, 'error');
     this.stopProgressLoop();
@@ -276,12 +287,22 @@ export class InterfaceController {
   }
 
   updateMarkers() {
-    this.progressBar.updateMarkers();
+    if (this._markerUpdateFrame !== null) return;
+
+    this._markerUpdateFrame = window.requestAnimationFrame(() => {
+      this._markerUpdateFrame = null;
+      this.progressBar.updateMarkers();
+    });
   }
 
   updateFragmentsLoaded() {
-    this.progressBar.updateFragmentsLoaded();
-    this.updateDownloadStatus();
+    if (this._fragmentUpdateFrame !== null) return;
+
+    this._fragmentUpdateFrame = window.requestAnimationFrame(() => {
+      this._fragmentUpdateFrame = null;
+      this.progressBar.updateFragmentsLoaded();
+      this.updateDownloadStatus();
+    });
   }
 
   updateDownloadStatus() {
@@ -325,7 +346,12 @@ export class InterfaceController {
     }
   }
 
-  updateSkipSegments() {
+  updateSkipSegments(layoutChanged = false) {
+    if (layoutChanged) {
+      this.progressBar.invalidateSkipLayout();
+      this._activeChapterIndex = -1;
+      this._activeChapterName = null;
+    }
     this.progressBar.updateSkipSegments();
   }
 
@@ -959,6 +985,15 @@ export class InterfaceController {
   destroy() {
     this.fineTimeControls.destroy();
     this.subtitlesManager.destroy();
+    this.progressBar.destroy();
+    if (this._fragmentUpdateFrame !== null) {
+      window.cancelAnimationFrame(this._fragmentUpdateFrame);
+      this._fragmentUpdateFrame = null;
+    }
+    if (this._markerUpdateFrame !== null) {
+      window.cancelAnimationFrame(this._markerUpdateFrame);
+      this._markerUpdateFrame = null;
+    }
     this.shouldRunProgressLoop = false;
     clearTimeout(this.hideControlBarTimeout);
     // Clean up dynamic drag handlers if destroy runs mid-drag (idempotent).
@@ -987,6 +1022,7 @@ export class InterfaceController {
 
   durationChanged() {
     const duration = this.client.duration;
+    this.progressBar.invalidateSkipLayout();
     if (duration < (5 * 60 * this.client.playbackRate) || this.fineTimeControls.started) {
       this.runProgressLoop();
     } else {
@@ -1110,14 +1146,19 @@ export class InterfaceController {
     DOMElements.duration.textContent = StringUtils.formatTime(this.state.currentTime) + ' / ' + StringUtils.formatTime(duration);
 
     const chapters = this.client.chapters;
-    if (chapters.length > 0) {
-      const time = this.state.currentTime;
-      const chapter = chapters.find((chapter) => chapter.startTime <= time && chapter.endTime >= time);
-      if (chapter) {
-        this.setStatusMessage('chapter', chapter.name, 'info');
-      }
-    } else {
-      this.setStatusMessage('chapter', null, 'info');
+    const time = this.state.currentTime;
+    let chapter = this._activeChapterIndex >= 0 ? chapters[this._activeChapterIndex] : null;
+    if (!chapter || chapter.startTime > time || chapter.endTime < time) {
+      this._activeChapterIndex = chapters.findIndex((candidate) => {
+        return candidate.startTime <= time && candidate.endTime >= time;
+      });
+      chapter = this._activeChapterIndex >= 0 ? chapters[this._activeChapterIndex] : null;
+    }
+
+    const chapterName = chapter?.name || null;
+    if (chapterName !== this._activeChapterName) {
+      this._activeChapterName = chapterName;
+      this.setStatusMessage('chapter', chapterName, 'info');
     }
 
     this.subtitlesManager.renderSubtitles();
