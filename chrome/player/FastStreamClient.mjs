@@ -154,6 +154,7 @@ export class FastStreamClient extends EventEmitter {
     this.pastSeeks = [];
     this.pastUnseeks = [];
     this.fragmentsStore = {};
+    this._boundMainloop = this.mainloop.bind(this);
     this.mainloop();
   }
 
@@ -1196,7 +1197,7 @@ export class FastStreamClient extends EventEmitter {
    */
   mainloop() {
     if (this.destroyed) return;
-    setTimeout(this.mainloop.bind(this), 1000);
+    setTimeout(this._boundMainloop, 1000);
 
     if (this.needsUserInteraction()) {
       this.interfaceController.setStatusMessage(StatusTypes.REQINTERACTION, Localize.getMessage('player_needs_interaction'), 'warning clickable');
