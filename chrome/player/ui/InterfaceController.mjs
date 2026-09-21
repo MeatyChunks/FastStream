@@ -50,6 +50,8 @@ export class InterfaceController {
     this._boundSkipSegment = this.skipSegment.bind(this);
     this._boundProgressLoop = this.progressLoop.bind(this);
     this._fragmentUpdateFrame = null;
+    this._activeChapterIndex = -1;
+    this._activeChapterName = null;
 
     this.toolManager = new ToolManager(this.client, this);
 
@@ -339,6 +341,8 @@ export class InterfaceController {
   updateSkipSegments(layoutChanged = false) {
     if (layoutChanged) {
       this.progressBar.invalidateSkipLayout();
+      this._activeChapterIndex = -1;
+      this._activeChapterName = null;
     }
     this.progressBar.updateSkipSegments();
   }
@@ -1130,14 +1134,19 @@ export class InterfaceController {
     DOMElements.duration.textContent = StringUtils.formatTime(this.state.currentTime) + ' / ' + StringUtils.formatTime(duration);
 
     const chapters = this.client.chapters;
-    if (chapters.length > 0) {
-      const time = this.state.currentTime;
-      const chapter = chapters.find((chapter) => chapter.startTime <= time && chapter.endTime >= time);
-      if (chapter) {
-        this.setStatusMessage('chapter', chapter.name, 'info');
-      }
-    } else {
-      this.setStatusMessage('chapter', null, 'info');
+    const time = this.state.currentTime;
+    let chapter = this._activeChapterIndex >= 0 ? chapters[this._activeChapterIndex] : null;
+    if (!chapter || chapter.startTime > time || chapter.endTime < time) {
+      this._activeChapterIndex = chapters.findIndex((candidate) => {
+        return candidate.startTime <= time && candidate.endTime >= time;
+      });
+      chapter = this._activeChapterIndex >= 0 ? chapters[this._activeChapterIndex] : null;
+    }
+
+    const chapterName = chapter?.name || null;
+    if (chapterName !== this._activeChapterName) {
+      this._activeChapterName = chapterName;
+      this.setStatusMessage('chapter', chapterName, 'info');
     }
 
     this.subtitlesManager.renderSubtitles();
