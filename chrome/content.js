@@ -29,6 +29,8 @@
   let Activated = false;
 
   let resizeDebounce = Date.now();
+  let replacedPlayersFrame = null;
+  let pendingReplacementConvert = null;
   const Config = {
     softReplaceByDefault: true,
     hasCustomPlaylist: false,
@@ -953,6 +955,18 @@
   }
 
   function updateReplacedPlayers(convert = null) {
+    if (convert) pendingReplacementConvert = convert;
+    if (replacedPlayersFrame !== null) return;
+
+    replacedPlayersFrame = window.requestAnimationFrame(() => {
+      replacedPlayersFrame = null;
+      const convertNow = pendingReplacementConvert;
+      pendingReplacementConvert = null;
+      updateReplacedPlayersNow(convertNow);
+    });
+  }
+
+  function updateReplacedPlayersNow(convert = null) {
     iframeMap.forEach((iframeObj) => {
       if (iframeObj.replacedData) {
         const {iframe, old, softReplace} = iframeObj.replacedData;
@@ -1150,6 +1164,21 @@
     return results;
   }
 
+  function querySelectorIncludingShadows(query, currentElement = document.body) {
+    if (!currentElement) return null;
+
+    const direct = currentElement.querySelector(query);
+    if (direct) return direct;
+
+    const allElements = currentElement.querySelectorAll('*');
+    for (const element of allElements) {
+      if (!element.shadowRoot) continue;
+      const found = querySelectorIncludingShadows(query, element.shadowRoot);
+      if (found) return found;
+    }
+    return null;
+  }
+
   /**
    * Finds the element a site integration named, preferring the selectors it listed
    * first.
@@ -1167,7 +1196,7 @@
     const queries = Array.isArray(query) ? query : [query];
 
     for (const one of queries) {
-      const found = querySelectorAllIncludingShadows(one)[0];
+      const found = querySelectorIncludingShadows(one);
       if (found) {
         return found;
       }
@@ -1242,9 +1271,8 @@
     });
   }
 
-  function testSimilarity(originalElement, childElement, parentElement) {
+  function testSimilarity(originalRect, childElement, parentElement) {
     const parentStyle = window.getComputedStyle(parentElement);
-    // const childStyle = window.getComputedStyle(childElement);
     const parentRect = parentElement.getBoundingClientRect();
     const childRect = childElement.getBoundingClientRect();
 
@@ -1252,8 +1280,6 @@
     if (parentStyle.position === 'fixed') {
       return false;
     }
-
-    const originalRect = originalElement.getBoundingClientRect();
     if (parentRect.width === 0 || parentRect.height === 0) {
       return true;
     }
@@ -1283,11 +1309,11 @@
 
   function getParentElementsWithSameBounds(element) {
     const elements = [];
-    const originalElement = element;
+    const originalRect = element.getBoundingClientRect();
 
     while (getParentElement(element)) {
       const parent = getParentElement(element);
-      if (testSimilarity(originalElement, element, parent)) {
+      if (testSimilarity(originalRect, element, parent)) {
         elements.push(parent);
       } else {
         break;
