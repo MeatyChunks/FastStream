@@ -129,7 +129,7 @@ export class FastStreamClient extends EventEmitter {
     }
 
     this.videoAnalyzer.on(AnalyzerEvents.MATCH, () => {
-      this.interfaceController.updateSkipSegments();
+      this.interfaceController.updateSkipSegments(true);
     });
 
     DOMElements.playerContainer.addEventListener('keydown', (e) => {
@@ -1629,7 +1629,7 @@ export class FastStreamClient extends EventEmitter {
     });
 
     this.context.on(DefaultPlayerEvents.SKIP_SEGMENTS, () => {
-      this.interfaceController.updateSkipSegments();
+      this.interfaceController.updateSkipSegments(true);
     });
   }
 
@@ -2262,7 +2262,7 @@ export class FastStreamClient extends EventEmitter {
     });
 
     this.customChapters = cleaned.length ? cleaned : null;
-    this.interfaceController.updateSkipSegments();
+    this.interfaceController.updateSkipSegments(true);
   }
 
   /**
