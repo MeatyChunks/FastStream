@@ -222,6 +222,8 @@ export class InterfaceController {
     this.progressBar.reset();
     this.saveManager.reset();
     this.failed = false;
+    this._activeChapterIndex = -1;
+    this._activeChapterName = null;
     this.setStatusMessage('error', null, 'error');
     this.setStatusMessage('chapter', null, 'error');
     this.stopProgressLoop();
