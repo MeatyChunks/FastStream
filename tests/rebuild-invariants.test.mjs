@@ -150,3 +150,31 @@ test('HTML source quality example covers preferred resolution choices', async ()
   assert.match(source, /data-quality="480p"/);
   assert.match(source, /preferred\/default quality/);
 });
+
+
+test('source variant picker follows explicit and Auto preferred heights', async () => {
+  const {LevelManager} = await import('../chrome/player/players/LevelManager.mjs');
+  const manager = Object.create(LevelManager.prototype);
+  const variants = [
+    {url: '480.mp4', height: 480, width: 854},
+    {url: '720.mp4', height: 720, width: 1280},
+    {url: '1080.mp4', height: 1080, width: 1920},
+  ];
+
+  manager.client = {options: {defaultQuality: '1080p'}};
+  assert.equal(manager.pickSourceVariant(variants).height, 1080);
+
+  manager.client.options.defaultQuality = '720p';
+  assert.equal(manager.pickSourceVariant(variants).height, 720);
+
+  const previousWindow = globalThis.window;
+  globalThis.window = {innerHeight: 650, devicePixelRatio: 1};
+  manager.client.options.defaultQuality = 'Auto';
+  assert.equal(manager.pickSourceVariant(variants).height, 720);
+
+  if (previousWindow === undefined) {
+    delete globalThis.window;
+  } else {
+    globalThis.window = previousWindow;
+  }
+});
