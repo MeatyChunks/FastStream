@@ -80,6 +80,11 @@ export class InterfaceController {
       }
       this.client.setCurrentVideoLevelID(level.id);
     });
+    this.videoQualityChanger.on('sourceQualityChanged', (variant) => {
+      this.client.setSourceVariant(variant).catch((e) => {
+        console.error('Failed to switch source quality', e);
+      });
+    });
 
     this.audioQualityChanger = new AudioQualityChanger();
     this.audioQualityChanger.setupUI();
