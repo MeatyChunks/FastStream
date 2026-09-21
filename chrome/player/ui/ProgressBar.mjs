@@ -163,6 +163,10 @@ export class ProgressBar extends EventEmitter {
     this._skipButtonVisible = false;
     this._nextBannerVisible = false;
     this._nextBannerSeconds = null;
+    DOMElements.skipButton.style.display = 'none';
+    DOMElements.nextVideoBannerButton.style.display = 'none';
+    DOMElements.progressContainer.classList.remove('skip_freeze');
+    DOMElements.skipButton.classList.remove('shiftup');
   }
 
   collectProgressbarData(fragments) {
