@@ -55,3 +55,35 @@ test('interface and subtitle UI clean up lifecycle-heavy resources', async () =>
   assert.match(subtitleSource, /_layoutDirty/);
   assert.match(subtitleSource, /childrenChanged/);
 });
+
+
+test('seek and replacement UI remain frame-driven while caching layout work', async () => {
+  const progressSource = await readSource('chrome/player/ui/ProgressBar.mjs');
+  const interfaceSource = await readSource('chrome/player/ui/InterfaceController.mjs');
+  const contentSource = await readSource('chrome/content.js');
+
+  assert.match(progressSource, /_progressGeometry/);
+  assert.match(progressSource, /renderProgressbarPreview/);
+  assert.match(progressSource, /dragFrame = window\.requestAnimationFrame/);
+  assert.match(interfaceSource, /_fragmentUpdateFrame/);
+  assert.match(contentSource, /replacedPlayersFrame = window\.requestAnimationFrame/);
+  assert.match(contentSource, /function querySelectorIncludingShadows/);
+});
+
+test('page video source variants flow into the quality picker and preserve playback state', async () => {
+  const contentSource = await readSource('chrome/content.js');
+  const backgroundSource = await readSource('chrome/background/background.mjs');
+  const mainSource = await readSource('chrome/player/main.mjs');
+  const videoSource = await readSource('chrome/player/VideoSource.mjs');
+  const clientSource = await readSource('chrome/player/FastStreamClient.mjs');
+  const qualitySource = await readSource('chrome/player/ui/menus/VideoQualityChanger.mjs');
+
+  assert.match(contentSource, /collectVideoSourceVariants/);
+  assert.match(backgroundSource, /videoSourceVariants/);
+  assert.match(mainSource, /source\.sourceVariants = videoSourceVariants/);
+  assert.match(videoSource, /sourceVariants = this\.sourceVariants\.map/);
+  assert.match(clientSource, /async setSourceVariant\(variant\)/);
+  assert.match(clientSource, /const currentTime = this\.currentTime/);
+  assert.match(qualitySource, /sourceQualityChanged/);
+  assert.match(qualitySource, /formatSourceVariantLabel/);
+});
