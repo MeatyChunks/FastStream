@@ -16,6 +16,7 @@ export class PreviewFrameExtractor extends EventEmitter {
     this.client = client;
     this.outputRateInv = 2;
     this.frameBuffer = [];
+    this._frameGeneration = 0;
 
     this.backgroundNeededBy = [];
 
@@ -67,6 +68,7 @@ export class PreviewFrameExtractor extends EventEmitter {
         });
       }
       this.frameBuffer = [];
+      this._frameGeneration++;
       this.backgroundAnalyzerSource = null;
       this.backgroundDoneRanges = [];
       this.stopBackgroundAnalyzer();
@@ -201,6 +203,7 @@ export class PreviewFrameExtractor extends EventEmitter {
     let currentRangeIndex = 0;
     let currentClientRange = null;
     let lastOffsetCalc = Date.now();
+    const frameGeneration = this._frameGeneration;
     const pendingFrameEncodes = new Set();
 
     const onEnd = () => {
@@ -266,7 +269,8 @@ export class PreviewFrameExtractor extends EventEmitter {
           pendingFrameEncodes.add(frame);
           this.extractorCanvas.toBlob((blob) => {
             pendingFrameEncodes.delete(frame);
-            if (destroyed || !blob || this.frameBuffer[frame]) return;
+            if (destroyed || frameGeneration !== this._frameGeneration ||
+                !blob || this.frameBuffer[frame]) return;
 
             this.frameBuffer[frame] = {
               blob,
