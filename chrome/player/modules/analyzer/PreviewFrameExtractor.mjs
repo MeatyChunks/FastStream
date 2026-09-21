@@ -9,6 +9,7 @@ const AnalyzerStatus = {
 };
 
 const SHOULD_STORE_AS_BLOB = true;
+const BACKGROUND_ANALYZER_STEP_MS = 33;
 
 export class PreviewFrameExtractor extends EventEmitter {
   constructor(client) {
@@ -216,6 +217,7 @@ export class PreviewFrameExtractor extends EventEmitter {
     });
 
     let paused = false;
+    let lastAnalyzerStep = Number.NEGATIVE_INFINITY;
     const pauseHandler = () => {
       if (!destroyed && !paused ) {
         paused = true;
@@ -227,6 +229,13 @@ export class PreviewFrameExtractor extends EventEmitter {
       if (destroyed) {
         return;
       }
+
+      requestAnimationFrame(onAnimFrame);
+      const frameNow = performance.now();
+      if (frameNow - lastAnalyzerStep < BACKGROUND_ANALYZER_STEP_MS) {
+        return;
+      }
+      lastAnalyzerStep = frameNow;
 
       const time = player.currentTime;
       const clientTimeOriginal = this.client.currentTime;
@@ -245,8 +254,6 @@ export class PreviewFrameExtractor extends EventEmitter {
 
       clearTimeout(pauseTimeout);
       pauseTimeout = setTimeout(pauseHandler, 100);
-
-      requestAnimationFrame(onAnimFrame);
 
       if (player.readyState < 2) {
         return;
