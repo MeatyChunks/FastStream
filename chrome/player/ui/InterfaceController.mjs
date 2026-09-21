@@ -49,6 +49,7 @@ export class InterfaceController {
     this._boundOnControlsMouseLeave = this.onControlsMouseLeave.bind(this);
     this._boundSkipSegment = this.skipSegment.bind(this);
     this._boundProgressLoop = this.progressLoop.bind(this);
+    this._fragmentUpdateFrame = null;
 
     this.toolManager = new ToolManager(this.client, this);
 
@@ -280,8 +281,13 @@ export class InterfaceController {
   }
 
   updateFragmentsLoaded() {
-    this.progressBar.updateFragmentsLoaded();
-    this.updateDownloadStatus();
+    if (this._fragmentUpdateFrame !== null) return;
+
+    this._fragmentUpdateFrame = window.requestAnimationFrame(() => {
+      this._fragmentUpdateFrame = null;
+      this.progressBar.updateFragmentsLoaded();
+      this.updateDownloadStatus();
+    });
   }
 
   updateDownloadStatus() {
@@ -959,6 +965,11 @@ export class InterfaceController {
   destroy() {
     this.fineTimeControls.destroy();
     this.subtitlesManager.destroy();
+    this.progressBar.destroy();
+    if (this._fragmentUpdateFrame !== null) {
+      window.cancelAnimationFrame(this._fragmentUpdateFrame);
+      this._fragmentUpdateFrame = null;
+    }
     this.shouldRunProgressLoop = false;
     clearTimeout(this.hideControlBarTimeout);
     // Clean up dynamic drag handlers if destroy runs mid-drag (idempotent).
