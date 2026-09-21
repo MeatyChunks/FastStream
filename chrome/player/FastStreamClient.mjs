@@ -414,7 +414,7 @@ export class FastStreamClient extends EventEmitter {
       this.interfaceController.updateToolVisibility();
     }
 
-    this.updateHasDownloadSpace();
+    this.updateHasDownloadSpace(true);
     this.interfaceController.updateAutoNextIndicator();
 
     this.syncedAudioPlayer?.setVideoDelay(this.options.videoDelay);
@@ -513,7 +513,7 @@ export class FastStreamClient extends EventEmitter {
    */
   updateDuration() {
     this.interfaceController.durationChanged();
-    this.updateHasDownloadSpace();
+    this.updateHasDownloadSpace(true);
   }
 
   /**
@@ -606,7 +606,7 @@ export class FastStreamClient extends EventEmitter {
   updateQualityLevels() {
     this.interfaceController.updateQualityLevels();
     this.interfaceController.updateLanguageTracks();
-    this.updateHasDownloadSpace();
+    this.updateHasDownloadSpace(true);
   }
 
   /**
@@ -648,7 +648,12 @@ export class FastStreamClient extends EventEmitter {
   /**
    * Updates the available download space and buffer indicators.
    */
-  updateHasDownloadSpace() {
+  updateHasDownloadSpace(force = false) {
+    const now = performance.now();
+    const lastUpdate = this._lastDownloadSpaceUpdate ?? Number.NEGATIVE_INFINITY;
+    if (!force && now - lastUpdate < 5000) return;
+    this._lastDownloadSpaceUpdate = now;
+
     const levels = this.getVideoLevels();
     if (!levels) return;
 
