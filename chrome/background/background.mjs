@@ -1161,8 +1161,20 @@ function collectSources(frame, remove = false) {
   return {subtitles, sources};
 }
 
+function collectVideoSourceVariants(frame) {
+  let currentFrame = frame;
+  while (currentFrame) {
+    if (currentFrame.videoSourceVariants?.length) {
+      return currentFrame.videoSourceVariants;
+    }
+    currentFrame = currentFrame.parent;
+  }
+  return [];
+}
+
 function sendSources(frame) {
   const {subtitles, sources} = collectSources(frame, true);
+  const videoSourceVariants = collectVideoSourceVariants(frame);
 
   const continuationOptions = frame.tab.continuationOptions;
   frame.tab.continuationOptions = null;
@@ -1171,6 +1183,7 @@ function sendSources(frame) {
     type: MessageTypes.SOURCES,
     subtitles: subtitles,
     sources: sources,
+    videoSourceVariants,
     autoSetSource: true,
     continuationOptions: continuationOptions,
   }, {
@@ -1231,11 +1244,16 @@ async function openPlayer(frame) {
     }, (response) => {
       BackgroundUtils.checkMessageError('player');
 
-      if (response === 'no_video') {
+      const action = response && typeof response === 'object' ? response.action : response;
+      if (response && typeof response === 'object' && Array.isArray(response.videoSources)) {
+        frame.videoSourceVariants = response.videoSources;
+      }
+
+      if (action === 'no_video') {
         frame.playerOpening = false;
       }
 
-      resolve(response);
+      resolve(action);
     });
   });
 }
