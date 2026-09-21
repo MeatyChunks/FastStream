@@ -65,6 +65,14 @@ if (EnvUtils.isExtension()) {
   }, 10000);
 }
 
+function normalizeSourceURL(url) {
+  try {
+    return new URL(url, window.location.href).href;
+  } catch (e) {
+    return url || '';
+  }
+}
+
 async function recieveSources(request, sendResponse) {
   console.log('Recieved sources', request.sources, request.subtitles, request.continuationOptions);
 
@@ -79,6 +87,8 @@ async function recieveSources(request, sendResponse) {
 
   let subs = request.subtitles;
   const sources = request.sources;
+  const videoSourceVariants = Array.isArray(request.videoSourceVariants) ? request.videoSourceVariants : [];
+  const videoSourceVariantURLs = new Set(videoSourceVariants.map((variant) => normalizeSourceURL(variant.url)));
 
   if (sources.length === 0) {
     sendResponse('no_sources');
@@ -156,7 +166,11 @@ async function recieveSources(request, sendResponse) {
   }
 
   sources.forEach((s) => {
-    window.fastStream.addSource(new VideoSource(s.url, s.headers, s.mode), s === autoSetSource);
+    const source = new VideoSource(s.url, s.headers, s.mode);
+    if (videoSourceVariants.length > 1 && videoSourceVariantURLs.has(normalizeSourceURL(s.url))) {
+      source.sourceVariants = videoSourceVariants.map((variant) => ({...variant}));
+    }
+    window.fastStream.addSource(source, s === autoSetSource);
   });
 
   if (subs) {
