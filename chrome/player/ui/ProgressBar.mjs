@@ -23,6 +23,27 @@ export class ProgressBar extends EventEmitter {
     this.keepPreciseModeOpen = false;
     this.onPreciseModeStartHandle = this.onPreciseModeStart.bind(this);
     this.onPreciseModeEndHandle = this.onPreciseModeEnd.bind(this);
+
+    this._progressGeometry = null;
+    this._geometryObserver = null;
+    this._hoverFrame = null;
+    this._hoverClientX = 0;
+  }
+
+  invalidateGeometry() {
+    this._progressGeometry = null;
+  }
+
+  getProgressGeometry() {
+    if (!this._progressGeometry) {
+      const rect = DOMElements.progressContainer.getBoundingClientRect();
+      this._progressGeometry = {
+        left: rect.left,
+        top: rect.top,
+        width: rect.width || DOMElements.progressContainer.clientWidth,
+      };
+    }
+    return this._progressGeometry;
   }
 
   onPreciseModeStart() {
@@ -102,6 +123,12 @@ export class ProgressBar extends EventEmitter {
     DOMElements.progressContainer.addEventListener('mouseenter', this.onProgressbarMouseEnter.bind(this));
     DOMElements.progressContainer.addEventListener('mouseleave', this.onProgressbarMouseLeave.bind(this));
     DOMElements.progressContainer.addEventListener('mousemove', this.onProgressbarMouseMove.bind(this));
+
+    if (window.ResizeObserver) {
+      this._geometryObserver = new ResizeObserver(() => this.invalidateGeometry());
+      this._geometryObserver.observe(DOMElements.progressContainer);
+    }
+    window.addEventListener('resize', this.invalidateGeometry.bind(this));
 
     DOMElements.nextVideoBannerButton.addEventListener('click', (e) => {
       this.client.nextVideo();
@@ -445,9 +472,21 @@ export class ProgressBar extends EventEmitter {
   }
 
   onProgressbarMouseMove(event) {
-    const currentX = Math.min(Math.max(event.clientX - WebUtils.getOffsetLeft(DOMElements.progressContainer), 0), DOMElements.progressContainer.clientWidth);
-    const totalWidth = DOMElements.progressContainer.clientWidth;
+    this._hoverClientX = event.clientX;
+    if (this._hoverFrame !== null) return;
 
+    this._hoverFrame = window.requestAnimationFrame(() => {
+      this._hoverFrame = null;
+      this.renderProgressbarPreview(this._hoverClientX);
+    });
+  }
+
+  renderProgressbarPreview(clientX) {
+    const geometry = this.getProgressGeometry();
+    const totalWidth = geometry.width;
+    if (!totalWidth) return;
+
+    const currentX = Math.min(Math.max(clientX - geometry.left, 0), totalWidth);
     const time = this.client.duration * currentX / totalWidth;
     const chapter = this.client.chapters.find((chapter) => chapter.startTime <= time && chapter.endTime >= time);
     const segment = this.skipSegments.find((segment) => segment.startTime <= time && segment.endTime >= time);
@@ -512,13 +551,18 @@ export class ProgressBar extends EventEmitter {
     this.client.setSeekSave(false);
 
     DOMElements.progressContainer.classList.add('freeze');
+    // Cache geometry for the drag. ResizeObserver invalidates it if layout changes.
+    let geometry = this.getProgressGeometry();
     // we need an initial position for touchstart events, as mouse up has no offset x for iOS
-    let initialPosition = Math.min(Math.max(event.clientX - WebUtils.getOffsetLeft(DOMElements.progressContainer), 0), DOMElements.progressContainer.clientWidth);
+    let initialPosition = Math.min(Math.max(event.clientX - geometry.left, 0), geometry.width);
 
     let preciseSavedTime = null;
     let preciseSavedPosition = null;
+    let dragFrame = null;
+    let pendingPointer = null;
     const shiftTime = (timeBarX) => {
-      const totalWidth = DOMElements.progressContainer.clientWidth;
+      geometry = this.getProgressGeometry();
+      const totalWidth = geometry.width;
       if (totalWidth) {
         let newTime;
         if (preciseSavedPosition !== null) {
@@ -532,10 +576,11 @@ export class ProgressBar extends EventEmitter {
       }
     };
 
-    const onProgressbarMouseMove = (event) => {
+    const applyPointerMove = (clientX, clientY) => {
       this.hidePreview();
-      const currentY = Math.min(Math.max(event.clientY - WebUtils.getOffsetTop(DOMElements.progressContainer), -100), 50);
-      const currentX = Math.min(Math.max(event.clientX - WebUtils.getOffsetLeft(DOMElements.progressContainer), 0), DOMElements.progressContainer.clientWidth);
+      geometry = this.getProgressGeometry();
+      const currentY = Math.min(Math.max(clientY - geometry.top, -100), 50);
+      const currentX = Math.min(Math.max(clientX - geometry.left, 0), geometry.width);
       const isExpanded = DOMElements.playerContainer.classList.contains('expanded');
       const offset = isExpanded ? 0 : 80;
       if ((this.preciseMode || preciseSavedPosition !== null) && currentY > 20) {
@@ -550,11 +595,32 @@ export class ProgressBar extends EventEmitter {
         this.startPreciseMode();
       }
 
-      initialPosition = NaN; // mouse up will fire after the move, we don't want to trigger the initial position in the event of iOS
+      initialPosition = NaN;
       shiftTime(currentX);
     };
 
+    const onProgressbarMouseMove = (event) => {
+      pendingPointer = {
+        clientX: event.clientX,
+        clientY: event.clientY,
+      };
+      if (dragFrame !== null) return;
+
+      dragFrame = window.requestAnimationFrame(() => {
+        dragFrame = null;
+        const pointer = pendingPointer;
+        pendingPointer = null;
+        if (pointer) applyPointerMove(pointer.clientX, pointer.clientY);
+      });
+    };
+
     const onProgressbarMouseUp = (event) => {
+      if (dragFrame !== null) {
+        window.cancelAnimationFrame(dragFrame);
+        dragFrame = null;
+      }
+      pendingPointer = null;
+
       DOMElements.playerContainer.removeEventListener('mousemove', onProgressbarMouseMove);
       DOMElements.playerContainer.removeEventListener('touchmove', onProgressbarMouseMove);
       DOMElements.playerContainer.removeEventListener('mouseup', onProgressbarMouseUp);
@@ -569,7 +635,8 @@ export class ProgressBar extends EventEmitter {
         this.showPreview();
       }
 
-      let clickedX = Math.min(Math.max(event.clientX - WebUtils.getOffsetLeft(DOMElements.progressContainer), 0), DOMElements.progressContainer.clientWidth);
+      geometry = this.getProgressGeometry();
+      let clickedX = Math.min(Math.max(event.clientX - geometry.left, 0), geometry.width);
 
       if (isNaN(clickedX) && !isNaN(initialPosition)) {
         clickedX = initialPosition;
@@ -602,7 +669,17 @@ export class ProgressBar extends EventEmitter {
 
   onProgressbarMouseEnter() {
     this.isMouseOverProgressbar = true;
+    this.invalidateGeometry();
     this.showPreview();
+  }
+
+  destroy() {
+    if (this._hoverFrame !== null) {
+      window.cancelAnimationFrame(this._hoverFrame);
+      this._hoverFrame = null;
+    }
+    this._geometryObserver?.disconnect();
+    this._geometryObserver = null;
   }
 
   showPreview() {
