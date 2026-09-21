@@ -178,3 +178,22 @@ test('source variant picker follows explicit and Auto preferred heights', async 
     globalThis.window = previousWindow;
   }
 });
+
+
+test('background thumbnail work is capped independently of visible UI cadence', async () => {
+  const extractorSource = await readSource('chrome/player/modules/analyzer/PreviewFrameExtractor.mjs');
+  const timelineSource = await readSource('chrome/player/ui/FineTimeControls.mjs');
+
+  assert.match(extractorSource, /BACKGROUND_ANALYZER_STEP_MS = 33/);
+  assert.match(extractorSource, /frameNow - lastAnalyzerStep < BACKGROUND_ANALYZER_STEP_MS/);
+  assert.match(timelineSource, /Math\.abs\(this\.lastFrameRenderTime - currentTime\) < 0\.0435/);
+});
+
+test('speed tracker maintains its sample total incrementally', async () => {
+  const source = await readSource('chrome/player/network/SpeedTracker.mjs');
+
+  assert.match(source, /this\.totalData = 0/);
+  assert.match(source, /this\.totalData \+= dataSize - this\.lastEntry\.dataSize/);
+  assert.match(source, /this\.totalData -= removed\.dataSize/);
+  assert.match(source, /return this\.totalData \/ dt/);
+});
