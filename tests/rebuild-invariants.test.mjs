@@ -81,7 +81,10 @@ test('page video source variants flow into the quality picker and preserve playb
   const qualitySource = await readSource('chrome/player/ui/menus/VideoQualityChanger.mjs');
 
   assert.match(contentSource, /collectVideoSourceVariants/);
+  assert.match(contentSource, /candidateVideos = new Set/);
+  assert.match(contentSource, /querySelectorAllIncludingShadows\('video', container\)/);
   assert.match(backgroundSource, /videoSourceVariants/);
+  assert.match(mainSource, /ownsPageVariants = s === autoSetSource/);
   assert.match(mainSource, /source\.sourceVariants = videoSourceVariants/);
   assert.match(videoSource, /sourceVariants = this\.sourceVariants\.map/);
   assert.match(clientSource, /async setSourceVariant\(variant\)/);
@@ -90,6 +93,15 @@ test('page video source variants flow into the quality picker and preserve playb
   assert.match(qualitySource, /formatSourceVariantLabel/);
 });
 
+
+test('preview loading timeout cannot outlive its preview player', async () => {
+  const clientSource = await readSource('chrome/player/FastStreamClient.mjs');
+
+  assert.match(clientSource, /const previewPlayer = this\.previewPlayer/);
+  assert.match(clientSource, /this\.previewPlayer !== previewPlayer/);
+  assert.match(clientSource, /clearTimeout\(this\.previewPlayerLoadingTimeout\)/);
+  assert.match(clientSource, /this\.previewPlayerLoadingTimeout = null/);
+});
 
 test('page source variants respect default quality without overriding explicit picks', async () => {
   const levelSource = await readSource('chrome/player/players/LevelManager.mjs');
