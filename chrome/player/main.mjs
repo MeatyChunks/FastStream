@@ -167,7 +167,9 @@ async function recieveSources(request, sendResponse) {
 
   sources.forEach((s) => {
     const source = new VideoSource(s.url, s.headers, s.mode);
-    if (videoSourceVariants.length > 1 && videoSourceVariantURLs.has(normalizeSourceURL(s.url))) {
+    const ownsPageVariants = s === autoSetSource ||
+      videoSourceVariantURLs.has(normalizeSourceURL(s.url));
+    if (videoSourceVariants.length > 1 && ownsPageVariants) {
       source.sourceVariants = videoSourceVariants.map((variant) => ({...variant}));
     }
     window.fastStream.addSource(source, s === autoSetSource);
