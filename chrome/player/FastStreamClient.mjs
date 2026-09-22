@@ -143,6 +143,7 @@ export class FastStreamClient extends EventEmitter {
     this.player = null;
     this.syncedAudioPlayer = null;
     this.previewPlayer = null;
+    this.previewPlayerLoadingTimeout = null;
     this.sourceChange = null;
     this.previewPlayerSetup = null;
     this.customChapters = null;
@@ -550,15 +551,19 @@ export class FastStreamClient extends EventEmitter {
    * Hides the preview video.
    */
   hidePreview() {
-    if (this.previewPlayer) {
-      this.previewPlayer.getVideo().style.opacity = 0;
-      clearTimeout(this.previewPlayerLoadingTimeout);
-      this.previewPlayerLoadingTimeout = setTimeout(() => {
-        if (parseFloat(this.previewPlayer.getVideo().style.opacity) === 0) {
-          DOMElements.seekPreviewVideo.classList.add('loading');
-        }
-      }, 200);
-    }
+    const previewPlayer = this.previewPlayer;
+    if (!previewPlayer) return;
+
+    previewPlayer.getVideo().style.opacity = 0;
+    clearTimeout(this.previewPlayerLoadingTimeout);
+    this.previewPlayerLoadingTimeout = setTimeout(() => {
+      if (this.previewPlayer !== previewPlayer) return;
+
+      const video = previewPlayer.getVideo();
+      if (parseFloat(video.style.opacity) === 0) {
+        DOMElements.seekPreviewVideo.classList.add('loading');
+      }
+    }, 200);
   }
 
   /**
@@ -569,6 +574,7 @@ export class FastStreamClient extends EventEmitter {
       this.previewPlayer.getVideo().style.opacity = 1;
       DOMElements.seekPreviewVideo.classList.remove('loading');
       clearTimeout(this.previewPlayerLoadingTimeout);
+      this.previewPlayerLoadingTimeout = null;
     }
   }
 
@@ -1444,6 +1450,9 @@ export class FastStreamClient extends EventEmitter {
     }
 
     this.customChapters = null;
+
+    clearTimeout(this.previewPlayerLoadingTimeout);
+    this.previewPlayerLoadingTimeout = null;
 
     if (this.previewPlayer) {
       try {
