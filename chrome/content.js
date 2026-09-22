@@ -308,11 +308,25 @@
       });
     };
 
-    addVariant(video.currentSrc, video, true);
-    addVariant(video.getAttribute('src'), video, video.currentSrc === video.src);
-    video.querySelectorAll('source').forEach((source) => {
-      const url = source.src || source.getAttribute('src');
-      addVariant(url, source, !!video.currentSrc && source.src === video.currentSrc);
+    const candidateVideos = new Set([video]);
+    if (container && container !== video) {
+      querySelectorAllIncludingShadows('video', container).forEach((candidate) => {
+        candidateVideos.add(candidate);
+      });
+    }
+
+    candidateVideos.forEach((candidate) => {
+      const isPrimary = candidate === video;
+      addVariant(candidate.currentSrc, candidate, isPrimary && !!candidate.currentSrc);
+      addVariant(
+          candidate.getAttribute('src'),
+          candidate,
+          isPrimary && candidate.currentSrc === candidate.src,
+      );
+      candidate.querySelectorAll('source').forEach((source) => {
+        const url = source.src || source.getAttribute('src');
+        addVariant(url, source, isPrimary && !!candidate.currentSrc && source.src === candidate.currentSrc);
+      });
     });
 
     return variants.size > 1 ? Array.from(variants.values()) : [];
