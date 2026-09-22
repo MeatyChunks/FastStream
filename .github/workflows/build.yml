@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - test/pr6-pr7-combined
     tags:
       - "v*.*.*"
       - "V*.*.*"
