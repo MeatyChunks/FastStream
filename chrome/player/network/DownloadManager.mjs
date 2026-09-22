@@ -307,13 +307,11 @@ export class DownloadManager {
 
   queueNext() {
     if (this.destroyed || this.paused) return;
-    if (this.queue.length === 0) return;
 
-    if (this.queue[0].status !== DownloadStatus.ENQUEUED) {
+    while (this.queue.length > 0 && this.queue[0].status !== DownloadStatus.ENQUEUED) {
       this.queue.shift();
-      this.queueNext();
-      return;
     }
+    if (this.queue.length === 0) return;
 
     const failCooldown = 1000;
     if (this.lastFailed + failCooldown > Date.now()) {

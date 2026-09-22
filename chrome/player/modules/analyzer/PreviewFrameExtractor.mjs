@@ -9,6 +9,7 @@ const AnalyzerStatus = {
 };
 
 const SHOULD_STORE_AS_BLOB = true;
+const BACKGROUND_ANALYZER_STEP_MS = 33;
 
 export class PreviewFrameExtractor extends EventEmitter {
   constructor(client) {
@@ -16,6 +17,7 @@ export class PreviewFrameExtractor extends EventEmitter {
     this.client = client;
     this.outputRateInv = 2;
     this.frameBuffer = [];
+    this._frameGeneration = 0;
 
     this.backgroundNeededBy = [];
 
@@ -67,6 +69,7 @@ export class PreviewFrameExtractor extends EventEmitter {
         });
       }
       this.frameBuffer = [];
+      this._frameGeneration++;
       this.backgroundAnalyzerSource = null;
       this.backgroundDoneRanges = [];
       this.stopBackgroundAnalyzer();
@@ -201,6 +204,8 @@ export class PreviewFrameExtractor extends EventEmitter {
     let currentRangeIndex = 0;
     let currentClientRange = null;
     let lastOffsetCalc = Date.now();
+    const frameGeneration = this._frameGeneration;
+    const pendingFrameEncodes = new Set();
 
     const onEnd = () => {
       completed = true;
@@ -212,6 +217,7 @@ export class PreviewFrameExtractor extends EventEmitter {
     });
 
     let paused = false;
+    let lastAnalyzerStep = Number.NEGATIVE_INFINITY;
     const pauseHandler = () => {
       if (!destroyed && !paused ) {
         paused = true;
@@ -223,6 +229,13 @@ export class PreviewFrameExtractor extends EventEmitter {
       if (destroyed) {
         return;
       }
+
+      requestAnimationFrame(onAnimFrame);
+      const frameNow = performance.now();
+      if (frameNow - lastAnalyzerStep < BACKGROUND_ANALYZER_STEP_MS) {
+        return;
+      }
+      lastAnalyzerStep = frameNow;
 
       const time = player.currentTime;
       const clientTimeOriginal = this.client.currentTime;
@@ -242,8 +255,6 @@ export class PreviewFrameExtractor extends EventEmitter {
       clearTimeout(pauseTimeout);
       pauseTimeout = setTimeout(pauseHandler, 100);
 
-      requestAnimationFrame(onAnimFrame);
-
       if (player.readyState < 2) {
         return;
       }
@@ -258,23 +269,23 @@ export class PreviewFrameExtractor extends EventEmitter {
 
       const frame = Math.floor(time / this.outputRateInv);
 
-      if (!this.frameBuffer[frame]) {
+      if (!this.frameBuffer[frame] && !pendingFrameEncodes.has(frame)) {
         this.extractorContext.drawImage(video, 0, 0, this.extractorCanvas.width, this.extractorCanvas.height);
-        const url = this.extractorCanvas.toDataURL('image/png');
-        if (SHOULD_STORE_AS_BLOB) {
-          // convert to blob
-          const byteString = atob(url.split(',')[1]);
-          const buffer = new ArrayBuffer(byteString.length);
-          const array = new Uint8Array(buffer);
-          for (let i = 0; i < byteString.length; i++) {
-            array[i] = byteString.charCodeAt(i);
-          }
-          const blob = new Blob([buffer], {type: 'image/png'});
-          this.frameBuffer[frame] = {
-            blob,
-            url: URL.createObjectURL(blob),
-          };
+
+        if (SHOULD_STORE_AS_BLOB && this.extractorCanvas.toBlob) {
+          pendingFrameEncodes.add(frame);
+          this.extractorCanvas.toBlob((blob) => {
+            pendingFrameEncodes.delete(frame);
+            if (destroyed || frameGeneration !== this._frameGeneration ||
+                !blob || this.frameBuffer[frame]) return;
+
+            this.frameBuffer[frame] = {
+              blob,
+              url: URL.createObjectURL(blob),
+            };
+          }, 'image/jpeg', 0.82);
         } else {
+          const url = this.extractorCanvas.toDataURL('image/png');
           this.frameBuffer[frame] = {
             url,
           };
