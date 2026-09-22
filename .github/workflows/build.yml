@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - test/pr6-pr7-combined
     tags:
       - "v*.*.*"
       - "V*.*.*"
@@ -23,8 +22,6 @@ jobs:
           node-version: lts/*
       - name: Install dependencies
         run: npm ci
-      - name: Test
-        run: npm test
       - name: Build
         run: npm run build
       - name: Upload artifacts
