@@ -23,6 +23,8 @@ export class DownloadManager {
     this.failed = 0;
 
     this.blobStore = new FSBlob();
+    this.destroyed = false;
+    this._destroyPromise = null;
   }
 
   getCompletedEntries() {
@@ -100,14 +102,29 @@ export class DownloadManager {
     }
   }
 
-  destroy() {
-    this.downloaders.forEach((downloader) => {
-      downloader.destroy();
-    });
-    this.downloaders = null;
-    this.storage = null;
-    this.blobStore.close();
-    this.blobStore = null;
+  async destroy() {
+    if (this._destroyPromise) return this._destroyPromise;
+
+    this.destroyed = true;
+    this.paused = true;
+    this.abortAll();
+
+    const downloaders = this.downloaders;
+    const storage = this.storage;
+    const blobStore = this.blobStore;
+
+    downloaders.forEach((downloader) => downloader.destroy());
+    this.downloaders = [];
+
+    this._destroyPromise = (async () => {
+      storage.clear();
+      await blobStore.close();
+
+      if (this.storage === storage) this.storage = null;
+      if (this.blobStore === blobStore) this.blobStore = null;
+    })();
+
+    return this._destroyPromise;
   }
 
   getFile(details, callbacks, priority) {
@@ -221,7 +238,7 @@ export class DownloadManager {
   }
 
   onDownloaderFinished(downloader, entry) {
-    if (this.paused) return;
+    if (this.destroyed || this.paused) return;
 
     if (navigator.onLine && entry.status === DownloadStatus.DOWNLOAD_FAILED && !entry.aborted) {
       this.lastFailed = Date.now();
@@ -289,7 +306,7 @@ export class DownloadManager {
   }
 
   queueNext() {
-    if (this.paused) return;
+    if (this.destroyed || this.paused) return;
     if (this.queue.length === 0) return;
 
     if (this.queue[0].status !== DownloadStatus.ENQUEUED) {
@@ -327,6 +344,7 @@ export class DownloadManager {
   }
 
   async reset() {
+    if (this.destroyed) return;
     this.abortAll();
 
     this.testing = true;
